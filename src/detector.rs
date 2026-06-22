@@ -107,7 +107,7 @@ fn detect_colors(image: &RgbaImage, min_value: u8, tolerance: u8) -> Result<(Rgb
         }
     }
 
-    clusters.sort_by(|a, b| b.1.cmp(&a.1));
+    clusters.sort_by_key(|b| std::cmp::Reverse(b.1));
 
     if clusters.len() < 2 {
         return Err(DetectError::ColorsNotFound);
