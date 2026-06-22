@@ -1,1 +1,3 @@
+mod io;
+
 fn main() {}
