@@ -53,12 +53,7 @@ fn preserves_foreground_on_checkerboard() {
 
     write_fixture(&input, &foreground_on_grid_fixture());
 
-    bin()
-        .arg(&input)
-        .arg("-o")
-        .arg(&output)
-        .assert()
-        .success();
+    bin().arg(&input).arg("-o").arg(&output).assert().success();
 
     let result = image::open(&output).unwrap().to_rgba8();
     let center = result.get_pixel(30, 30);

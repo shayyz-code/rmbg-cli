@@ -59,7 +59,10 @@ impl Default for DetectOptions {
     }
 }
 
-pub fn detect_checkerboard(image: &RgbaImage, options: &DetectOptions) -> Result<CheckerboardParams, DetectError> {
+pub fn detect_checkerboard(
+    image: &RgbaImage,
+    options: &DetectOptions,
+) -> Result<CheckerboardParams, DetectError> {
     let (color_a, color_b) = match (options.color_a, options.color_b) {
         (Some(a), Some(b)) => (a, b),
         _ => detect_colors(image, options.min_checker_value, options.tolerance)?,
@@ -80,7 +83,11 @@ pub fn detect_checkerboard(image: &RgbaImage, options: &DetectOptions) -> Result
     })
 }
 
-fn detect_colors(image: &RgbaImage, min_value: u8, tolerance: u8) -> Result<(Rgb, Rgb), DetectError> {
+fn detect_colors(
+    image: &RgbaImage,
+    min_value: u8,
+    tolerance: u8,
+) -> Result<(Rgb, Rgb), DetectError> {
     let samples = corner_samples(image, 5);
     let checker_samples: Vec<Rgb> = samples
         .into_iter()
@@ -93,13 +100,19 @@ fn detect_colors(image: &RgbaImage, min_value: u8, tolerance: u8) -> Result<(Rgb
 
     let mut clusters: Vec<(Rgb, usize)> = Vec::new();
     for sample in checker_samples {
-        if let Some(cluster) = clusters.iter_mut().find(|(center, _)| center.matches(sample, tolerance)) {
+        if let Some(cluster) = clusters
+            .iter_mut()
+            .find(|(center, _)| center.matches(sample, tolerance))
+        {
             let count = cluster.1 + 1;
             let center = cluster.0;
             cluster.0 = Rgb {
-                r: ((u16::from(center.r) * (count as u16 - 1) + u16::from(sample.r)) / count as u16) as u8,
-                g: ((u16::from(center.g) * (count as u16 - 1) + u16::from(sample.g)) / count as u16) as u8,
-                b: ((u16::from(center.b) * (count as u16 - 1) + u16::from(sample.b)) / count as u16) as u8,
+                r: ((u16::from(center.r) * (count as u16 - 1) + u16::from(sample.r)) / count as u16)
+                    as u8,
+                g: ((u16::from(center.g) * (count as u16 - 1) + u16::from(sample.g)) / count as u16)
+                    as u8,
+                b: ((u16::from(center.b) * (count as u16 - 1) + u16::from(sample.b)) / count as u16)
+                    as u8,
             };
             cluster.1 = count;
         } else {
@@ -128,7 +141,12 @@ fn detect_colors(image: &RgbaImage, min_value: u8, tolerance: u8) -> Result<(Rgb
     Ok((color_a, color_b))
 }
 
-fn detect_tile_size(image: &RgbaImage, color_a: Rgb, color_b: Rgb, tolerance: u8) -> Result<u32, DetectError> {
+fn detect_tile_size(
+    image: &RgbaImage,
+    color_a: Rgb,
+    color_b: Rgb,
+    tolerance: u8,
+) -> Result<u32, DetectError> {
     let width = image.width();
     let height = image.height();
     let max_scan = width.min(128);
@@ -139,7 +157,9 @@ fn detect_tile_size(image: &RgbaImage, color_a: Rgb, color_b: Rgb, tolerance: u8
 
     for x in 1..max_scan {
         let current = rgb_at(image, x, 0);
-        if !current.matches(last, tolerance) && (current.matches(color_a, tolerance) || current.matches(color_b, tolerance)) {
+        if !current.matches(last, tolerance)
+            && (current.matches(color_a, tolerance) || current.matches(color_b, tolerance))
+        {
             transition = Some(x);
             break;
         }
@@ -187,7 +207,8 @@ fn score_tile_size(
 
     for y in 0..sample_h {
         for x in 0..sample_w {
-            let expected = expected_color_for_cell(color_a, color_b, rgb_at(image, 0, 0), tile_size, x, y);
+            let expected =
+                expected_color_for_cell(color_a, color_b, rgb_at(image, 0, 0), tile_size, x, y);
             let actual = rgb_at(image, x, y);
             total += 1;
             if actual.matches(expected, tolerance) {
@@ -212,7 +233,8 @@ pub fn expected_color_for_cell(
     y: u32,
 ) -> Rgb {
     let parity = (x / tile_size + y / tile_size) % 2;
-    let origin_is_a = origin_color.matches(color_a, 15) || origin_color.distance_sq(color_a) <= origin_color.distance_sq(color_b);
+    let origin_is_a = origin_color.matches(color_a, 15)
+        || origin_color.distance_sq(color_a) <= origin_color.distance_sq(color_b);
     match (parity, origin_is_a) {
         (0, true) | (1, false) => color_a,
         _ => color_b,
@@ -290,8 +312,22 @@ mod tests {
 
         let params = detect_checkerboard(&img, &DetectOptions::default()).unwrap();
         assert_eq!(params.tile_size, 8);
-        assert!(params.color_a.matches(Rgb { r: 255, g: 255, b: 255 }, 15));
-        assert!(params.color_b.matches(Rgb { r: 204, g: 204, b: 204 }, 15));
+        assert!(params.color_a.matches(
+            Rgb {
+                r: 255,
+                g: 255,
+                b: 255
+            },
+            15
+        ));
+        assert!(params.color_b.matches(
+            Rgb {
+                r: 204,
+                g: 204,
+                b: 204
+            },
+            15
+        ));
     }
 
     #[test]

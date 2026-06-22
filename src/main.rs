@@ -54,7 +54,12 @@ fn run() -> anyhow::Result<()> {
     if cli.verbose {
         eprintln!(
             "detected colors: ({},{},{}) / ({},{},{})",
-            params.color_a.r, params.color_a.g, params.color_a.b, params.color_b.r, params.color_b.g, params.color_b.b
+            params.color_a.r,
+            params.color_a.g,
+            params.color_a.b,
+            params.color_b.r,
+            params.color_b.g,
+            params.color_b.b
         );
         eprintln!("detected tile size: {} px", params.tile_size);
     }
@@ -84,7 +89,8 @@ fn run() -> anyhow::Result<()> {
         .clone()
         .unwrap_or_else(|| default_output_path(input));
 
-    save_png(&output, &output_image).with_context(|| format!("writing output to {}", output.display()))?;
+    save_png(&output, &output_image)
+        .with_context(|| format!("writing output to {}", output.display()))?;
 
     if cli.verbose {
         eprintln!("wrote {}", output.display());

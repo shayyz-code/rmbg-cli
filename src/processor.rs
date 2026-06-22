@@ -46,22 +46,15 @@ pub fn remove_checkerboard(
                 y,
             );
 
-            let matches_checker_color =
-                rgb.matches(params.color_a, options.tolerance) || rgb.matches(params.color_b, options.tolerance);
+            let matches_checker_color = rgb.matches(params.color_a, options.tolerance)
+                || rgb.matches(params.color_b, options.tolerance);
             let matches_grid = rgb.matches(expected, options.tolerance);
 
             mask[idx] = matches_checker_color && matches_grid;
         }
     }
 
-    refine_mask_with_shell_overlap(
-        &mut mask,
-        image,
-        params,
-        options.tolerance,
-        width,
-        height,
-    );
+    refine_mask_with_shell_overlap(&mut mask, image, params, options.tolerance, width, height);
 
     let mut output = image.clone();
     let mut masked_pixels = 0_u64;

@@ -12,7 +12,8 @@ pub enum IoError {
 
 pub fn load_image(path: &Path) -> Result<RgbaImage> {
     let format = ImageFormat::from_path(path).ok();
-    let img = image::open(path).with_context(|| format!("failed to open image: {}", path.display()))?;
+    let img =
+        image::open(path).with_context(|| format!("failed to open image: {}", path.display()))?;
 
     if let Some(fmt) = format {
         if !is_supported_format(fmt) {
@@ -26,8 +27,9 @@ pub fn load_image(path: &Path) -> Result<RgbaImage> {
 pub fn save_png(path: &Path, image: &RgbaImage) -> Result<()> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create output directory: {}", parent.display()))?;
+            std::fs::create_dir_all(parent).with_context(|| {
+                format!("failed to create output directory: {}", parent.display())
+            })?;
         }
     }
 
@@ -39,7 +41,10 @@ pub fn save_png(path: &Path, image: &RgbaImage) -> Result<()> {
 }
 
 pub fn default_output_path(input: &Path) -> PathBuf {
-    let stem = input.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
+    let stem = input
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("output");
     let parent = input.parent().unwrap_or_else(|| Path::new("."));
     parent.join(format!("{stem}-no-grid.png"))
 }

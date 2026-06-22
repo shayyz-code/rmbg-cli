@@ -133,7 +133,11 @@ mod tests {
     fn parses_comma_separated_rgb() {
         assert_eq!(
             parse_rgb("10, 20, 30").unwrap(),
-            Rgb { r: 10, g: 20, b: 30 }
+            Rgb {
+                r: 10,
+                g: 20,
+                b: 30
+            }
         );
     }
 }
