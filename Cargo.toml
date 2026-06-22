@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Remove transparency checkerboard grids from images"
 license = "MIT"
-repository = "https://github.com/YOUR_USERNAME/rmtg"
+repository = "https://github.com/shayyz-code/rmtg"
 readme = "README.md"
 
 [dependencies]

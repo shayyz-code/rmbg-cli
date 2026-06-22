@@ -1,7 +1,7 @@
 # rmtg
 
-[![CI](https://github.com/YOUR_USERNAME/rmtg/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_USERNAME/rmtg/actions/workflows/ci.yml)
-[![Release](https://github.com/YOUR_USERNAME/rmtg/actions/workflows/release.yml/badge.svg)](https://github.com/YOUR_USERNAME/rmtg/actions/workflows/release.yml)
+[![CI](https://github.com/shayyz-code/rmtg/actions/workflows/ci.yml/badge.svg)](https://github.com/shayyz-code/rmtg/actions/workflows/ci.yml)
+[![Release](https://github.com/shayyz-code/rmtg/actions/workflows/release.yml/badge.svg)](https://github.com/shayyz-code/rmtg/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
 
@@ -9,10 +9,10 @@
 
 ## Install
 
-Download a prebuilt binary for your platform from the [GitHub Releases](https://github.com/YOUR_USERNAME/rmtg/releases) page, or build from source:
+Download a prebuilt binary for your platform from the [GitHub Releases](https://github.com/shayyz-code/rmtg/releases) page, or build from source:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/rmtg.git
+git clone https://github.com/shayyz-code/rmtg.git
 cd rmtg
 cargo install --path .
 ```
