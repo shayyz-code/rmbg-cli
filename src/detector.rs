@@ -65,7 +65,7 @@ pub fn detect_checkerboard(
 ) -> Result<CheckerboardParams, DetectError> {
     let (color_a, color_b) = match (options.color_a, options.color_b) {
         (Some(a), Some(b)) => (a, b),
-        _ => detect_colors(image, options.min_checker_value, options.tolerance)?,
+        _ => detect_colors(image, options.min_checker_value)?,
     };
 
     let tile_size = match options.tile_size {
@@ -83,12 +83,24 @@ pub fn detect_checkerboard(
     })
 }
 
-fn detect_colors(
-    image: &RgbaImage,
-    min_value: u8,
-    tolerance: u8,
-) -> Result<(Rgb, Rgb), DetectError> {
-    let samples = corner_samples(image, 5);
+/// Fixed tolerance used to cluster corner samples into checker-color groups.
+/// Kept independent of the user-facing `--tolerance` (which drives mask
+/// matching) so that raising mask tolerance can't accidentally merge two
+/// faint checker shades back into a single cluster.
+const COLOR_CLUSTER_TOLERANCE: u8 = 8;
+
+/// Corner sampling block size in pixels. Must comfortably exceed the
+/// largest auto-detected tile size (32px, see `detect_tile_size`) so each
+/// corner block spans at least one full tile boundary and observes both
+/// checker shades, rather than landing entirely inside a single tile.
+const CORNER_SAMPLE_SIZE: u32 = 64;
+
+fn detect_colors(image: &RgbaImage, min_value: u8) -> Result<(Rgb, Rgb), DetectError> {
+    let sample_size = CORNER_SAMPLE_SIZE
+        .min(image.width() / 2)
+        .min(image.height() / 2)
+        .max(1);
+    let samples = corner_samples(image, sample_size);
     let checker_samples: Vec<Rgb> = samples
         .into_iter()
         .filter(|c| c.r >= min_value && c.g >= min_value && c.b >= min_value)
@@ -102,19 +114,17 @@ fn detect_colors(
     for sample in checker_samples {
         if let Some(cluster) = clusters
             .iter_mut()
-            .find(|(center, _)| center.matches(sample, tolerance))
+            .find(|(center, _)| center.matches(sample, COLOR_CLUSTER_TOLERANCE))
         {
-            let count = cluster.1 + 1;
+            let prev_count = cluster.1 as u64;
+            let new_count = prev_count + 1;
             let center = cluster.0;
             cluster.0 = Rgb {
-                r: ((u16::from(center.r) * (count as u16 - 1) + u16::from(sample.r)) / count as u16)
-                    as u8,
-                g: ((u16::from(center.g) * (count as u16 - 1) + u16::from(sample.g)) / count as u16)
-                    as u8,
-                b: ((u16::from(center.b) * (count as u16 - 1) + u16::from(sample.b)) / count as u16)
-                    as u8,
+                r: ((u64::from(center.r) * prev_count + u64::from(sample.r)) / new_count) as u8,
+                g: ((u64::from(center.g) * prev_count + u64::from(sample.g)) / new_count) as u8,
+                b: ((u64::from(center.b) * prev_count + u64::from(sample.b)) / new_count) as u8,
             };
-            cluster.1 = count;
+            cluster.1 += 1;
         } else {
             clusters.push((sample, 1));
         }
@@ -134,7 +144,7 @@ fn detect_colors(
         .max_by_key(|candidate| color_a.distance_sq(*candidate))
         .unwrap_or(clusters[1].0);
 
-    if color_a.distance_sq(color_b) < u32::from(tolerance).pow(2) * 3 {
+    if color_a.distance_sq(color_b) < u32::from(COLOR_CLUSTER_TOLERANCE).pow(2) * 3 {
         return Err(DetectError::ColorsNotFound);
     }
 
@@ -327,6 +337,48 @@ mod tests {
                 b: 204
             },
             15
+        ));
+    }
+
+    #[test]
+    fn detects_faint_large_tile_checkerboard() {
+        // Regression test: a 24px-tile board with only ~13/channel contrast
+        // (253,253,253) vs (240,240,240) used to fail color detection because
+        // the old 5x5 corner sampling window was smaller than the tile size
+        // and could land entirely inside a single tile.
+        let img = make_checkerboard(
+            128,
+            128,
+            24,
+            Rgb {
+                r: 253,
+                g: 253,
+                b: 253,
+            },
+            Rgb {
+                r: 240,
+                g: 240,
+                b: 240,
+            },
+        );
+
+        let params = detect_checkerboard(&img, &DetectOptions::default()).unwrap();
+        assert_eq!(params.tile_size, 24);
+        assert!(params.color_a.matches(
+            Rgb {
+                r: 253,
+                g: 253,
+                b: 253
+            },
+            5
+        ));
+        assert!(params.color_b.matches(
+            Rgb {
+                r: 240,
+                g: 240,
+                b: 240
+            },
+            5
         ));
     }
 
