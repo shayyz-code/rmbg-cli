@@ -1,0 +1,12 @@
+[package]
+name = "rmtg"
+version = "0.1.0"
+edition = "2021"
+description = "Remove transparency checkerboard grids from images"
+license = "MIT"
+repository = "https://github.com/YOUR_USERNAME/rmtg"
+readme = "README.md"
+
+[dependencies]
+
+[dev-dependencies]
