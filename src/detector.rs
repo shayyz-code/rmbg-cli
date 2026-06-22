@@ -27,23 +27,17 @@ impl Rgb {
 pub struct CheckerboardParams {
     pub color_a: Rgb,
     pub color_b: Rgb,
-    pub tile_size: u32,
-    pub origin_color: Rgb,
 }
 
 #[derive(Debug, Error)]
 pub enum DetectError {
     #[error("could not detect checkerboard colors in image corners")]
     ColorsNotFound,
-    #[error("could not detect checkerboard tile size")]
-    TileSizeNotFound,
 }
 
 pub struct DetectOptions {
     pub color_a: Option<Rgb>,
     pub color_b: Option<Rgb>,
-    pub tile_size: Option<u32>,
-    pub tolerance: u8,
     pub min_checker_value: u8,
 }
 
@@ -52,8 +46,6 @@ impl Default for DetectOptions {
         Self {
             color_a: None,
             color_b: None,
-            tile_size: None,
-            tolerance: 10,
             min_checker_value: 200,
         }
     }
@@ -68,31 +60,19 @@ pub fn detect_checkerboard(
         _ => detect_colors(image, options.min_checker_value)?,
     };
 
-    let tile_size = match options.tile_size {
-        Some(size) if size >= 2 => size,
-        _ => detect_tile_size(image, color_a, color_b, options.tolerance)?,
-    };
-
-    let origin_color = rgb_at(image, 0, 0);
-
-    Ok(CheckerboardParams {
-        color_a,
-        color_b,
-        tile_size,
-        origin_color,
-    })
+    Ok(CheckerboardParams { color_a, color_b })
 }
 
 /// Fixed tolerance used to cluster corner samples into checker-color groups.
-/// Kept independent of the user-facing `--tolerance` (which drives mask
-/// matching) so that raising mask tolerance can't accidentally merge two
-/// faint checker shades back into a single cluster.
+/// Kept independent of the user-facing `--tolerance` (which drives the
+/// flood-fill match in `processor.rs`) so that raising mask tolerance can't
+/// accidentally merge two faint checker shades back into a single cluster.
 const COLOR_CLUSTER_TOLERANCE: u8 = 8;
 
-/// Corner sampling block size in pixels. Must comfortably exceed the
-/// largest auto-detected tile size (32px, see `detect_tile_size`) so each
-/// corner block spans at least one full tile boundary and observes both
-/// checker shades, rather than landing entirely inside a single tile.
+/// Corner sampling block size in pixels. Large enough to span several
+/// checkerboard tiles (real-world tiles are commonly 8-32px) so each corner
+/// block reliably observes both checker shades, rather than landing entirely
+/// inside a single tile.
 const CORNER_SAMPLE_SIZE: u32 = 64;
 
 fn detect_colors(image: &RgbaImage, min_value: u8) -> Result<(Rgb, Rgb), DetectError> {
@@ -151,106 +131,6 @@ fn detect_colors(image: &RgbaImage, min_value: u8) -> Result<(Rgb, Rgb), DetectE
     Ok((color_a, color_b))
 }
 
-fn detect_tile_size(
-    image: &RgbaImage,
-    color_a: Rgb,
-    color_b: Rgb,
-    tolerance: u8,
-) -> Result<u32, DetectError> {
-    let width = image.width();
-    let height = image.height();
-    let max_scan = width.min(128);
-
-    let mut transition: Option<u32> = None;
-    let origin = rgb_at(image, 0, 0);
-    let mut last = origin;
-
-    for x in 1..max_scan {
-        let current = rgb_at(image, x, 0);
-        if !current.matches(last, tolerance)
-            && (current.matches(color_a, tolerance) || current.matches(color_b, tolerance))
-        {
-            transition = Some(x);
-            break;
-        }
-        last = current;
-    }
-
-    let mut candidates: Vec<u32> = (4..=32).collect();
-    if let Some(t) = transition {
-        if !candidates.contains(&t) {
-            candidates.push(t);
-        }
-    }
-
-    let mut best_size = None;
-    let mut best_score = 0.0_f64;
-
-    for size in candidates {
-        let score = score_tile_size(image, color_a, color_b, tolerance, size, width, height);
-        if score > best_score {
-            best_score = score;
-            best_size = Some(size);
-        }
-    }
-
-    if best_score < 0.55 {
-        return Err(DetectError::TileSizeNotFound);
-    }
-
-    best_size.ok_or(DetectError::TileSizeNotFound)
-}
-
-fn score_tile_size(
-    image: &RgbaImage,
-    color_a: Rgb,
-    color_b: Rgb,
-    tolerance: u8,
-    tile_size: u32,
-    width: u32,
-    height: u32,
-) -> f64 {
-    let sample_w = width.min(64);
-    let sample_h = height.min(64);
-    let mut matches = 0_u32;
-    let mut total = 0_u32;
-
-    for y in 0..sample_h {
-        for x in 0..sample_w {
-            let expected =
-                expected_color_for_cell(color_a, color_b, rgb_at(image, 0, 0), tile_size, x, y);
-            let actual = rgb_at(image, x, y);
-            total += 1;
-            if actual.matches(expected, tolerance) {
-                matches += 1;
-            }
-        }
-    }
-
-    if total == 0 {
-        return 0.0;
-    }
-
-    f64::from(matches) / f64::from(total)
-}
-
-pub fn expected_color_for_cell(
-    color_a: Rgb,
-    color_b: Rgb,
-    origin_color: Rgb,
-    tile_size: u32,
-    x: u32,
-    y: u32,
-) -> Rgb {
-    let parity = (x / tile_size + y / tile_size) % 2;
-    let origin_is_a = origin_color.matches(color_a, 15)
-        || origin_color.distance_sq(color_a) <= origin_color.distance_sq(color_b);
-    match (parity, origin_is_a) {
-        (0, true) | (1, false) => color_a,
-        _ => color_b,
-    }
-}
-
 fn corner_samples(image: &RgbaImage, sample_size: u32) -> Vec<Rgb> {
     let width = image.width();
     let height = image.height();
@@ -291,11 +171,15 @@ mod tests {
     use super::*;
     use image::{Rgba, RgbaImage};
 
+    /// Builds a synthetic checkerboard by alternating tiles based on parity
+    /// of `(x / tile, y / tile)`. This is a *test-only* pattern generator —
+    /// production detection/removal no longer assumes an integer tile grid.
     fn make_checkerboard(width: u32, height: u32, tile: u32, light: Rgb, dark: Rgb) -> RgbaImage {
         let mut img = RgbaImage::new(width, height);
         for y in 0..height {
             for x in 0..width {
-                let color = expected_color_for_cell(light, dark, light, tile, x, y);
+                let parity = (x / tile + y / tile) % 2;
+                let color = if parity == 0 { light } else { dark };
                 img.put_pixel(x, y, Rgba([color.r, color.g, color.b, 255]));
             }
         }
@@ -321,7 +205,6 @@ mod tests {
         );
 
         let params = detect_checkerboard(&img, &DetectOptions::default()).unwrap();
-        assert_eq!(params.tile_size, 8);
         assert!(params.color_a.matches(
             Rgb {
                 r: 255,
@@ -363,7 +246,6 @@ mod tests {
         );
 
         let params = detect_checkerboard(&img, &DetectOptions::default()).unwrap();
-        assert_eq!(params.tile_size, 24);
         assert!(params.color_a.matches(
             Rgb {
                 r: 253,
@@ -380,44 +262,5 @@ mod tests {
             },
             5
         ));
-    }
-
-    #[test]
-    fn detects_sixteen_pixel_tiles() {
-        let img = make_checkerboard(
-            96,
-            96,
-            16,
-            Rgb {
-                r: 255,
-                g: 255,
-                b: 255,
-            },
-            Rgb {
-                r: 230,
-                g: 230,
-                b: 230,
-            },
-        );
-
-        let params = detect_checkerboard(&img, &DetectOptions::default()).unwrap();
-        assert_eq!(params.tile_size, 16);
-    }
-
-    #[test]
-    fn expected_color_alternates_by_grid() {
-        let a = Rgb {
-            r: 255,
-            g: 255,
-            b: 255,
-        };
-        let b = Rgb {
-            r: 204,
-            g: 204,
-            b: 204,
-        };
-        assert!(expected_color_for_cell(a, b, a, 8, 0, 0).matches(a, 0));
-        assert!(expected_color_for_cell(a, b, a, 8, 8, 0).matches(b, 0));
-        assert!(expected_color_for_cell(a, b, a, 8, 0, 8).matches(b, 0));
     }
 }

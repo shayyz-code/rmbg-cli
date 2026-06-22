@@ -36,7 +36,7 @@ fn removes_checkerboard_to_transparent_png() {
         .arg("-v")
         .assert()
         .success()
-        .stderr(predicate::str::contains("detected tile size: 8 px"));
+        .stderr(predicate::str::contains("detected colors:"));
 
     let result = image::open(&output).unwrap().to_rgba8();
     assert_eq!(result.dimensions(), (64, 64));

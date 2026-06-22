@@ -37,7 +37,7 @@ rmtg photo.png --background 255,128,0 -o on-orange.png
 Override detection when auto-detect struggles:
 
 ```bash
-rmtg photo.png --tile-size 16 --tolerance 12
+rmtg photo.png --tolerance 20
 rmtg photo.png --color-a "#FFFFFF" --color-b "#CCCCCC"
 ```
 
@@ -47,8 +47,7 @@ rmtg photo.png --color-a "#FFFFFF" --color-b "#CCCCCC"
 |------|-------------|
 | `-o, --output <PATH>` | Output path (default: `<input>-no-grid.png`) |
 | `--background <COLOR>` | Replace grid with solid color (`#RRGGBB`, `R,G,B`, `white`, `black`) |
-| `--tolerance <N>` | Color match tolerance (default: `10`) |
-| `--tile-size <N>` | Force checker tile size in pixels |
+| `--tolerance <N>` | Color match tolerance for the flood fill (default: `12`) |
 | `--color-a`, `--color-b` | Override detected checker colors |
 | `-v, --verbose` | Print detected parameters and masked pixel count |
 | `-h, --help` | Show help |
@@ -63,14 +62,14 @@ rmtg photo.png --color-a "#FFFFFF" --color-b "#CCCCCC"
 
 ## How it works
 
-1. **Color detection** — samples image corners to find the two dominant light checker colors.
-2. **Tile size detection** — scores candidate square sizes (4–32 px) against grid periodicity.
-3. **Grid-aware masking** — marks pixels that match checker colors *and* fall on the detected grid; refines edges with a shell-overlap pass for anti-aliased boundaries.
-4. **Output** — sets masked pixels to transparent (default) or a user-chosen solid color.
+1. **Color detection** — samples image corners to find the two dominant checker colors.
+2. **Border flood fill** — starting from every edge pixel that matches either checker color, grows into 4-connected neighbors that also match. This needs no assumption about tile size or grid alignment, which makes it robust to the non-integer, slightly drifting tile periods real exported checkerboards often have.
+3. **Output** — sets the filled (background) pixels to transparent (default) or a user-chosen solid color. Foreground content is preserved because it isn't reachable from the border unless it's both checker-colored *and* connected all the way to an edge.
 
 ## Limitations
 
-- Works best when the checkerboard is the background and foreground content does not contain large uniform regions in the same gray/white tones.
+- Works best when the checkerboard is the background and touches the image border. Checkerboard that is fully enclosed by foreground (e.g. visible only through a hole in the artwork) is not connected to the border and won't be removed.
+- Foreground content that is itself checker-colored *and* touches the image border can get removed along with the background, since connectivity (not just color) is what's used to tell them apart.
 - JPEG input is supported, but output is always PNG (transparency requires it).
 - Unusual checker colors may need manual `--color-a` / `--color-b` overrides.
 

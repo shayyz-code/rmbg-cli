@@ -1,6 +1,8 @@
+use std::collections::VecDeque;
+
 use image::RgbaImage;
 
-use crate::detector::{expected_color_for_cell, CheckerboardParams, Rgb};
+use crate::detector::{CheckerboardParams, Rgb};
 
 #[derive(Debug, Clone, Copy)]
 pub struct BackgroundColor {
@@ -25,36 +27,21 @@ pub struct ProcessResult {
     pub masked_pixels: u64,
 }
 
+/// Removes the checkerboard background by flood-filling from the image
+/// border across pixels that match either checker color, rather than
+/// predicting a grid pattern. This sidesteps non-integer / drifting tile
+/// periods entirely: the background is treated as whatever checker-colored
+/// region is reachable from the edge, and foreground content (which the
+/// checker colors don't reach, by construction of a real checkerboard) is
+/// left untouched even where it happens to be a similar light shade, as long
+/// as it's enclosed rather than border-connected.
 pub fn remove_checkerboard(
     image: &RgbaImage,
     params: &CheckerboardParams,
     options: &ProcessOptions,
 ) -> ProcessResult {
     let (width, height) = image.dimensions();
-    let mut mask = vec![false; (width * height) as usize];
-
-    for y in 0..height {
-        for x in 0..width {
-            let idx = (y * width + x) as usize;
-            let rgb = rgb_at(image, x, y);
-            let expected = expected_color_for_cell(
-                params.color_a,
-                params.color_b,
-                params.origin_color,
-                params.tile_size,
-                x,
-                y,
-            );
-
-            let matches_checker_color = rgb.matches(params.color_a, options.tolerance)
-                || rgb.matches(params.color_b, options.tolerance);
-            let matches_grid = rgb.matches(expected, options.tolerance);
-
-            mask[idx] = matches_checker_color && matches_grid;
-        }
-    }
-
-    refine_mask_with_shell_overlap(&mut mask, image, params, options.tolerance, width, height);
+    let mask = flood_fill_from_border(image, params, options.tolerance, width, height);
 
     let mut output = image.clone();
     let mut masked_pixels = 0_u64;
@@ -86,93 +73,61 @@ pub fn remove_checkerboard(
     }
 }
 
-fn refine_mask_with_shell_overlap(
-    mask: &mut [bool],
+fn flood_fill_from_border(
     image: &RgbaImage,
     params: &CheckerboardParams,
     tolerance: u8,
     width: u32,
     height: u32,
-) {
-    let color_a_mask = color_mask(image, params.color_a, tolerance, width, height);
-    let color_b_mask = color_mask(image, params.color_b, tolerance, width, height);
+) -> Vec<bool> {
+    let mut visited = vec![false; (width * height) as usize];
+    let is_checker = |x: u32, y: u32| {
+        let rgb = rgb_at(image, x, y);
+        rgb.matches(params.color_a, tolerance) || rgb.matches(params.color_b, tolerance)
+    };
 
-    let shell_a = shell_from_mask(&color_a_mask, width, height);
-    let shell_b = shell_from_mask(&color_b_mask, width, height);
+    let mut queue: VecDeque<(u32, u32)> = VecDeque::new();
+    let enqueue = |x: u32, y: u32, visited: &mut Vec<bool>, queue: &mut VecDeque<(u32, u32)>| {
+        let idx = (y * width + x) as usize;
+        if !visited[idx] && is_checker(x, y) {
+            visited[idx] = true;
+            queue.push_back((x, y));
+        }
+    };
 
-    let overlap = and_masks(&shell_a, &shell_b, width, height);
-    let expanded_overlap = dilate_mask(&overlap, width, height, 8);
+    if width == 0 || height == 0 {
+        return visited;
+    }
 
+    for x in 0..width {
+        enqueue(x, 0, &mut visited, &mut queue);
+        if height > 1 {
+            enqueue(x, height - 1, &mut visited, &mut queue);
+        }
+    }
     for y in 0..height {
-        for x in 0..width {
-            let idx = (y * width + x) as usize;
-            if !expanded_overlap[idx] {
-                continue;
-            }
-
-            let rgb = rgb_at(image, x, y);
-            if rgb.matches(params.color_a, tolerance) || rgb.matches(params.color_b, tolerance) {
-                mask[idx] = true;
-            }
-        }
-    }
-}
-
-fn color_mask(image: &RgbaImage, color: Rgb, tolerance: u8, width: u32, height: u32) -> Vec<bool> {
-    let mut mask = vec![false; (width * height) as usize];
-    for y in 0..height {
-        for x in 0..width {
-            let idx = (y * width + x) as usize;
-            mask[idx] = rgb_at(image, x, y).matches(color, tolerance);
-        }
-    }
-    mask
-}
-
-fn shell_from_mask(mask: &[bool], width: u32, height: u32) -> Vec<bool> {
-    let dilated = dilate_mask(mask, width, height, 1);
-    let mut shell = vec![false; mask.len()];
-    for idx in 0..mask.len() {
-        shell[idx] = dilated[idx] && !mask[idx];
-    }
-    dilate_mask(&shell, width, height, 1)
-}
-
-fn dilate_mask(mask: &[bool], width: u32, height: u32, radius: u32) -> Vec<bool> {
-    let mut out = vec![false; mask.len()];
-    let r = radius as i32;
-
-    for y in 0..height as i32 {
-        for x in 0..width as i32 {
-            let idx = (y as u32 * width + x as u32) as usize;
-            if mask[idx] {
-                out[idx] = true;
-                continue;
-            }
-
-            'neighbor: for dy in -r..=r {
-                for dx in -r..=r {
-                    let nx = x + dx;
-                    let ny = y + dy;
-                    if nx < 0 || ny < 0 || nx >= width as i32 || ny >= height as i32 {
-                        continue;
-                    }
-                    let nidx = (ny as u32 * width + nx as u32) as usize;
-                    if mask[nidx] {
-                        out[idx] = true;
-                        break 'neighbor;
-                    }
-                }
-            }
+        enqueue(0, y, &mut visited, &mut queue);
+        if width > 1 {
+            enqueue(width - 1, y, &mut visited, &mut queue);
         }
     }
 
-    out
-}
+    while let Some((x, y)) = queue.pop_front() {
+        if x + 1 < width {
+            enqueue(x + 1, y, &mut visited, &mut queue);
+        }
+        if x > 0 {
+            enqueue(x - 1, y, &mut visited, &mut queue);
+        }
+        if y + 1 < height {
+            enqueue(x, y + 1, &mut visited, &mut queue);
+        }
+        if y > 0 {
+            enqueue(x, y - 1, &mut visited, &mut queue);
+        }
+    }
 
-fn and_masks(a: &[bool], b: &[bool], width: u32, height: u32) -> Vec<bool> {
-    let len = (width * height) as usize;
-    (0..len).map(|i| a[i] && b[i]).collect()
+    visited
 }
 
 fn rgb_at(image: &RgbaImage, x: u32, y: u32) -> Rgb {
@@ -190,21 +145,23 @@ mod tests {
     use crate::detector::{detect_checkerboard, DetectOptions};
     use image::{Rgba, RgbaImage};
 
+    const LIGHT: Rgb = Rgb {
+        r: 255,
+        g: 255,
+        b: 255,
+    };
+    const DARK: Rgb = Rgb {
+        r: 204,
+        g: 204,
+        b: 204,
+    };
+
     fn checkerboard(width: u32, height: u32, tile: u32) -> RgbaImage {
-        let light = Rgb {
-            r: 255,
-            g: 255,
-            b: 255,
-        };
-        let dark = Rgb {
-            r: 204,
-            g: 204,
-            b: 204,
-        };
         let mut img = RgbaImage::new(width, height);
         for y in 0..height {
             for x in 0..width {
-                let color = expected_color_for_cell(light, dark, light, tile, x, y);
+                let parity = (x / tile + y / tile) % 2;
+                let color = if parity == 0 { LIGHT } else { DARK };
                 img.put_pixel(x, y, Rgba([color.r, color.g, color.b, 255]));
             }
         }
@@ -276,5 +233,52 @@ mod tests {
         assert_eq!(result.image.get_pixel(0, 0)[1], 128);
         assert_eq!(result.image.get_pixel(0, 0)[2], 255);
         assert_eq!(result.image.get_pixel(0, 0)[3], 255);
+    }
+
+    #[test]
+    fn enclosed_light_region_survives_border_fill() {
+        // A non-matching ring (dark navy) encloses a light/white square in
+        // the middle of the checkerboard. Border flood-fill must clear the
+        // checkerboard but must NOT reach the enclosed light square, proving
+        // connectivity (not color alone) discriminates background from
+        // foreground.
+        let mut img = checkerboard(40, 40, 8);
+        let navy = Rgba([20, 20, 60, 255]);
+        let white = Rgba([255, 255, 255, 255]);
+
+        // Ring from (10,10) to (29,29).
+        for y in 10..30 {
+            for x in 10..30 {
+                let on_ring = x == 10 || x == 29 || y == 10 || y == 29;
+                img.put_pixel(x, y, if on_ring { navy } else { white });
+            }
+        }
+
+        let params = detect_checkerboard(&img, &DetectOptions::default()).unwrap();
+        let result = remove_checkerboard(
+            &img,
+            &params,
+            &ProcessOptions {
+                tolerance: 10,
+                output: OutputMode::Transparent,
+            },
+        );
+
+        // Outer checkerboard cleared.
+        assert_eq!(result.image.get_pixel(0, 0)[3], 0);
+        assert_eq!(result.image.get_pixel(39, 39)[3], 0);
+
+        // Enclosed light square (interior of the ring) untouched.
+        for y in 15..25 {
+            for x in 15..25 {
+                let pixel = result.image.get_pixel(x, y);
+                assert_eq!(pixel[3], 255, "interior pixel ({x},{y}) was masked");
+                assert_eq!([pixel[0], pixel[1], pixel[2]], [255, 255, 255]);
+            }
+        }
+
+        // The ring itself never matched the checker colors, so it's
+        // untouched too.
+        assert_eq!(result.image.get_pixel(10, 10)[3], 255);
     }
 }

@@ -45,8 +45,6 @@ fn run() -> anyhow::Result<()> {
     let detect_options = DetectOptions {
         color_a: cli.color_a()?,
         color_b: cli.color_b()?,
-        tile_size: cli.tile_size,
-        tolerance: cli.tolerance,
         ..DetectOptions::default()
     };
 
@@ -61,7 +59,6 @@ fn run() -> anyhow::Result<()> {
             params.color_b.g,
             params.color_b.b
         );
-        eprintln!("detected tile size: {} px", params.tile_size);
     }
 
     let ProcessResult {
@@ -77,7 +74,7 @@ fn run() -> anyhow::Result<()> {
     );
 
     if masked_pixels == 0 {
-        anyhow::bail!("no checkerboard pixels detected; try adjusting --tolerance or --tile-size");
+        anyhow::bail!("no checkerboard pixels detected; try adjusting --tolerance");
     }
 
     if cli.verbose {

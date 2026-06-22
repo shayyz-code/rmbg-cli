@@ -25,12 +25,8 @@ pub struct Cli {
     pub background: Option<String>,
 
     /// Color match tolerance
-    #[arg(long, default_value_t = 10)]
+    #[arg(long, default_value_t = 12)]
     pub tolerance: u8,
-
-    /// Force checker tile size and skip auto-detection
-    #[arg(long, value_name = "N")]
-    pub tile_size: Option<u32>,
 
     /// Override first checker color (e.g. #FFFFFF or 255,255,255)
     #[arg(long, value_name = "COLOR")]

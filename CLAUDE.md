@@ -26,19 +26,12 @@ The pipeline is a strict linear flow through four modules, each owning one stage
 
 1. **`cli.rs`** — argument parsing (`clap`). Also parses color strings (`#RRGGBB`, `R,G,B`, `white`, `black`) into `detector::Rgb` and resolves `--background` into a `processor::OutputMode`.
 2. **`io.rs`** — loads the input image to `RgbaImage`, validates format support, computes the default output path (`<input>-no-grid.png`), and saves PNG output.
-3. **`detector.rs`** — given the loaded image, determines `CheckerboardParams` (the two checker colors, tile size in px, and the color at the image origin):
-   - Color detection samples the four image corners and clusters pixel colors above a brightness threshold, picking the two most distinct clusters.
-   - Tile size detection scans for a color transition along the top edge, then scores candidate tile sizes (4–32px, plus the detected transition) by how well they predict pixel colors against the expected alternating-checker pattern (`expected_color_for_cell`). Best score must clear a 0.55 threshold or detection fails.
-   - Either color or tile size can be overridden via CLI flags, in which case detection is skipped for that piece.
-4. **`processor.rs`** — given `CheckerboardParams`, builds a per-pixel mask of checker cells (color match AND grid-position match), then refines it with a **shell-overlap pass**: it dilates the color-A and color-B masks by 1px to get their boundary "shells," ANDs the shells together (this finds the checkerboard's interior seams where anti-aliasing blurs the two colors), dilates that overlap by 8px, and re-tests pixels in the expanded region against the checker colors. This catches anti-aliased grid pixels that the strict grid-position check would otherwise miss without bleeding into foreground content. Finally applies the mask as either alpha=0 (transparent) or a solid RGB fill.
+3. **`detector.rs`** — given the loaded image, determines `CheckerboardParams` (just the two checker colors): samples the four image corners (in 64px blocks, large enough to span several tiles even on big checker patterns), filters for bright pixels above `min_checker_value`, and clusters them with a fixed tolerance (`COLOR_CLUSTER_TOLERANCE`, independent of the user-facing `--tolerance`) to find the two most distinct color clusters. Colors can be overridden via CLI flags, skipping detection.
+4. **`processor.rs`** — given `CheckerboardParams`, removes the background via **border-seeded flood fill**: every border pixel matching either checker color (within `--tolerance`) seeds a 4-connected BFS that grows into checker-colored neighbors. The visited set becomes the background mask, applied as alpha=0 (transparent) or a solid RGB fill. There is deliberately no tile-size or grid-phase modeling — connectivity to the border is what discriminates background from foreground, which makes this robust to non-integer/drifting checker periods (real exported checkerboards are rarely an exact integer pixel grid). The tradeoff: checkerboard not connected to the border won't be removed, and foreground that is itself checker-colored *and* touches the border can get swept up (see README Limitations).
 
-`main.rs` wires the four stages together and maps domain errors to exit codes: `1` for user errors (bad args, missing file), `2` for processing errors (`DetectError`, `IoError`, or zero masked pixels).
-
-### Key invariant
-
-Detection and removal must agree on the checker pattern's phase. `origin_color` (the pixel at (0,0)) anchors `expected_color_for_cell`'s parity calculation — it's computed once in `detect_checkerboard` and threaded through to `processor::remove_checkerboard` so both stages mask the same logical grid cells.
+`main.rs` wires the two stages together and maps domain errors to exit codes: `1` for user errors (bad args, missing file), `2` for processing errors (`DetectError`, `IoError`, or zero masked pixels).
 
 ## Testing conventions
 
-- Unit tests live inline in each module (`#[cfg(test)] mod tests`), generally building a synthetic checkerboard via `expected_color_for_cell` and asserting on detection/masking output.
+- Unit tests live inline in each module (`#[cfg(test)] mod tests`), generally building a synthetic checkerboard via a small parity-based test helper and asserting on detection/masking output.
 - Integration tests (`tests/integration.rs`) drive the compiled binary via `assert_cmd`, using fixtures from `tests/common/mod.rs` and `tests/fixtures/`.
