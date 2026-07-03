@@ -18,7 +18,6 @@ hosted inference API is used.
 
 ## Requirements and installation
 
-- [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - A Hugging Face account that has accepted the RMBG-2.0 access conditions
 - Rust 1.75+ when building from source
 
@@ -28,19 +27,34 @@ directory together. Alternatively, build from source:
 ```bash
 git clone https://github.com/shayyz-code/rmbg-cli.git
 cd rmbg-cli
-uv sync --project runtime --frozen
 cargo build --release
 ```
 
-Authenticate before the first inference:
+Run setup once from the extracted release directory:
 
 ```bash
-uv run --project runtime hf auth login
+./rmbg setup # Windows: .\rmbg.exe setup
 ```
 
-You can instead provide `HF_TOKEN` in the environment. The first run downloads
-the gated model and its trusted remote code into the Hugging Face cache;
-subsequent runs use the local cache.
+For a source build, use:
+
+```bash
+./target/release/rmbg setup
+```
+
+Setup checks for [uv](https://docs.astral.sh/uv/getting-started/installation/),
+prints the official installation command if it is missing, installs the locked
+Python dependencies, starts Hugging Face login when needed, downloads the pinned
+844 MB model, and validates that it loads on the selected device. If BRIA's
+non-commercial terms have not been accepted, setup prints the model page and can
+be rerun after access is granted. You can use `HF_TOKEN` instead of interactive
+login.
+
+Setup is idempotent and reuses installed dependencies and cached weights:
+
+```bash
+rmbg setup --device cpu
+```
 
 ## Usage
 
@@ -74,8 +88,14 @@ rmbg photo.jpg --device cpu
 | `-v, --verbose` | Print model, device, revision, and output details |
 | `-h, --help` | Show help |
 
-Exit code `1` indicates invalid user input. Exit code `2` indicates a missing
-runtime, uv failure, model-access problem, inference failure, or output error.
+`rmbg setup [--device auto|cuda|mps|cpu]` prepares and validates all local
+runtime prerequisites. Because `setup` is reserved as a command, process a file
+with that exact name as `rmbg ./setup`.
+
+Exit code `1` indicates invalid input or a setup action the user must complete,
+such as installing uv, authenticating non-interactively, or accepting model
+terms. Exit code `2` indicates dependency, network, runtime, model-load,
+inference, or output failure.
 
 ## How it works
 

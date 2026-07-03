@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.4.0] - 2026-07-03
+
+### Added
+
+- Added `rmbg setup` to install the locked Python runtime, start interactive
+  Hugging Face authentication when needed, download the pinned RMBG-2.0 model,
+  and validate that it loads on the selected device.
+- Added actionable setup guidance for missing uv, non-interactive
+  authentication, and unaccepted BRIA model terms.
+
 ## [0.3.0] - 2026-07-03
 
 ### Changed
