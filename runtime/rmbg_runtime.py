@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Protocol
 
 import torch
+from huggingface_hub.errors import GatedRepoError
 from PIL import Image, ImageChops, ImageOps
 from torchvision import transforms
 from transformers import AutoModelForImageSegmentation
@@ -121,12 +122,27 @@ def parse_background(value: str) -> tuple[int, int, int]:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--input", type=Path, required=True)
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--setup", action="store_true")
+    parser.add_argument("--input", type=Path)
+    parser.add_argument("--output", type=Path)
     parser.add_argument("--device", choices=("auto", "cuda", "mps", "cpu"), default="auto")
     parser.add_argument("--background", type=parse_background)
     parser.add_argument("--verbose", action="store_true")
     return parser.parse_args(argv)
+
+
+def is_gated_error(error: BaseException) -> bool:
+    current: BaseException | None = error
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        if isinstance(current, GatedRepoError):
+            return True
+        message = str(current).lower()
+        if "gated repo" in message or "restricted model" in message:
+            return True
+        seen.add(id(current))
+        current = current.__cause__ or current.__context__
+    return False
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -137,12 +153,19 @@ def main(argv: list[str] | None = None) -> int:
             print(f"runtime device: {device}", file=sys.stderr)
             print(f"model revision: {MODEL_REVISION}", file=sys.stderr)
         model = load_model(device)
+        if args.setup:
+            print(f"RMBG-2.0 is downloaded and valid on {device}.", file=sys.stderr)
+            return 0
+        if args.input is None or args.output is None:
+            raise ValueError("--input and --output are required for image processing")
         process_image(model, args.input, args.output, device, args.background)
         return 0
     except Exception as error:
         print(f"error: {error}", file=sys.stderr)
         if args.verbose:
             traceback.print_exc()
+        if args.setup and is_gated_error(error):
+            return 3
         return 2
 
 

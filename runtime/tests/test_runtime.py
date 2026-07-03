@@ -75,6 +75,21 @@ class RuntimeTests(unittest.TestCase):
         with self.assertRaises(Exception):
             rmbg_runtime.parse_background("256,0,0")
 
+    def test_setup_loads_model_without_running_inference(self) -> None:
+        with (
+            mock.patch.object(rmbg_runtime, "select_device", return_value=torch.device("cpu")),
+            mock.patch.object(rmbg_runtime, "load_model") as load_model,
+            mock.patch.object(rmbg_runtime, "process_image") as process_image,
+        ):
+            self.assertEqual(rmbg_runtime.main(["--setup", "--device", "cpu"]), 0)
+            load_model.assert_called_once_with(torch.device("cpu"))
+            process_image.assert_not_called()
+
+    def test_setup_returns_distinct_code_for_gated_model(self) -> None:
+        gated = rmbg_runtime.GatedRepoError("accept the model terms")
+        with mock.patch.object(rmbg_runtime, "load_model", side_effect=gated):
+            self.assertEqual(rmbg_runtime.main(["--setup", "--device", "cpu"]), 3)
+
 
 if __name__ == "__main__":
     unittest.main()

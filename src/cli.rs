@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, ValueEnum};
@@ -26,7 +27,8 @@ impl Device {
     name = "rmbg",
     version,
     about = "Remove image backgrounds locally with BRIA RMBG-2.0",
-    long_about = None
+    long_about = None,
+    after_help = "Commands:\n  setup  Install dependencies, authenticate, and download RMBG-2.0\n\nA file named 'setup' must be passed as './setup'."
 )]
 pub struct Cli {
     /// Input image path
@@ -47,6 +49,45 @@ pub struct Cli {
     /// Print runtime, device, model, and output information
     #[arg(short, long)]
     pub verbose: bool,
+}
+
+#[derive(Debug, Parser)]
+#[command(
+    name = "rmbg setup",
+    version,
+    about = "Prepare the local RMBG-2.0 runtime",
+    long_about = None
+)]
+pub struct SetupCli {
+    /// Device on which to validate the model; auto prefers CUDA, then MPS, then CPU
+    #[arg(long, value_enum, default_value_t = Device::Auto)]
+    pub device: Device,
+}
+
+#[derive(Debug)]
+pub enum Invocation {
+    Remove(Cli),
+    Setup(SetupCli),
+}
+
+pub fn parse_invocation() -> Invocation {
+    parse_invocation_from(std::env::args_os()).unwrap_or_else(|error| error.exit())
+}
+
+fn parse_invocation_from<I, T>(args: I) -> Result<Invocation, clap::Error>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<OsString> + Clone,
+{
+    let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
+    let is_setup = args.get(1).is_some_and(|value| value == "setup");
+
+    if is_setup {
+        let setup_args = std::iter::once(args[0].clone()).chain(args.into_iter().skip(2));
+        SetupCli::try_parse_from(setup_args).map(Invocation::Setup)
+    } else {
+        Cli::try_parse_from(args).map(Invocation::Remove)
+    }
 }
 
 impl Cli {
@@ -114,5 +155,25 @@ mod tests {
             default_output_path(Path::new("images/photo.jpg")),
             PathBuf::from("images/photo-no-bg.png")
         );
+    }
+
+    #[test]
+    fn dispatches_setup_without_changing_image_syntax() {
+        let setup = parse_invocation_from(["rmbg", "setup", "--device", "cpu"]).unwrap();
+        assert!(matches!(
+            setup,
+            Invocation::Setup(SetupCli {
+                device: Device::Cpu
+            })
+        ));
+
+        let remove = parse_invocation_from(["rmbg", "photo.jpg", "--device", "cpu"]).unwrap();
+        assert!(matches!(
+            remove,
+            Invocation::Remove(Cli {
+                device: Device::Cpu,
+                ..
+            })
+        ));
     }
 }

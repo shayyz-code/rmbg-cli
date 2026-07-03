@@ -4,9 +4,8 @@ mod runtime;
 use std::process::ExitCode;
 
 use anyhow::Context;
-use clap::Parser;
 
-use cli::Cli;
+use cli::{Cli, Invocation};
 
 fn main() -> ExitCode {
     match run() {
@@ -28,7 +27,16 @@ enum AppError {
 }
 
 fn run() -> Result<(), AppError> {
-    let cli = Cli::parse();
+    match cli::parse_invocation() {
+        Invocation::Remove(cli) => run_remove(cli),
+        Invocation::Setup(setup) => runtime::run_setup(setup.device).map_err(|error| match error {
+            runtime::SetupError::User(error) => AppError::User(error),
+            runtime::SetupError::Runtime(error) => AppError::Runtime(error),
+        }),
+    }
+}
+
+fn run_remove(cli: Cli) -> Result<(), AppError> {
     if !cli.input.is_file() {
         return Err(AppError::User(anyhow::anyhow!(
             "input file not found: {}",

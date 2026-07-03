@@ -23,7 +23,19 @@ fn version_uses_renamed_executable() {
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::starts_with("rmbg 0.3.0"));
+        .stdout(predicate::str::starts_with("rmbg 0.4.0"));
+}
+
+#[test]
+fn setup_help_does_not_require_uv_or_an_input_image() {
+    bin()
+        .args(["setup", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Prepare the local RMBG-2.0 runtime",
+        ))
+        .stdout(predicate::str::contains("--device"));
 }
 
 #[test]
