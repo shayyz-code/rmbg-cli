@@ -2,10 +2,15 @@
 name = "rmbg-cli"
 version = "0.4.0"
 edition = "2021"
+rust-version = "1.75"
 description = "Remove image backgrounds locally with BRIA RMBG-2.0"
 license = "MIT"
 repository = "https://github.com/shayyz-code/rmbg-cli"
+homepage = "https://github.com/shayyz-code/rmbg-cli"
 readme = "README.md"
+keywords = ["background-removal", "image", "cli", "segmentation", "transformers"]
+categories = ["command-line-utilities", "multimedia::images"]
+publish = false
 
 [[bin]]
 name = "rmbg"
@@ -13,9 +18,13 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1"
-clap = { version = "4", features = ["derive"] }
+clap = { version = "=4.5.23", features = ["derive"] }
 
 [dev-dependencies]
 assert_cmd = "2"
 predicates = "3"
 tempfile = "3"
+
+[profile.dist]
+inherits = "release"
+lto = "thin"
