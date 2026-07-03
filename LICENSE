@@ -1,3 +1,19 @@
+RMBG-2.0 MODEL WEIGHTS LICENSE NOTICE
+
+This repository uses the briaai/RMBG-2.0 model. The model weights are licensed
+separately by BRIA AI for non-commercial use under the Creative Commons
+Attribution-NonCommercial 4.0 International license (CC BY-NC 4.0).
+
+Model and license information:
+https://huggingface.co/briaai/RMBG-2.0
+https://creativecommons.org/licenses/by-nc/4.0/
+
+Commercial use of the model weights requires a separate agreement with BRIA.
+The notice above applies to the model weights and does not replace the MIT
+license for this repository's source code, reproduced unchanged below.
+
+-------------------------------------------------------------------------------
+
 MIT License
 
 Copyright (c) 2026 rmtg contributors

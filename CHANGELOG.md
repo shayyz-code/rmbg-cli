@@ -4,6 +4,26 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.0] - 2026-07-03
+
+### Changed
+
+- Renamed the project to `rmbg-cli` and the executable to `rmbg`.
+- Replaced checkerboard color detection with local background-removal inference
+  using `briaai/RMBG-2.0` through a locked uv/Transformers runtime.
+- Changed the default output suffix from `-no-grid.png` to `-no-bg.png`.
+- Release archives now include the Python runtime required by the Rust wrapper.
+
+### Added
+
+- Automatic CUDA, Apple MPS, or CPU device selection with `--device` override.
+- Explicit non-commercial model-weight licensing and first-run authentication
+  documentation.
+
+### Removed
+
+- Checkerboard-specific `--tolerance`, `--color-a`, and `--color-b` options.
+
 ## [0.2.0] - 2026-06-22
 
 ### Changed
