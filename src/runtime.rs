@@ -1,4 +1,5 @@
 use std::env;
+use std::fs;
 use std::io::{self, IsTerminal};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -9,6 +10,18 @@ use crate::cli::{Cli, Device};
 
 const RUNTIME_DIR_NAME: &str = "runtime";
 const WORKER_NAME: &str = "rmbg_runtime.py";
+const EMBEDDED_RUNTIME_FILES: &[(&str, &[u8])] = &[
+    (
+        ".python-version",
+        include_bytes!("../runtime/.python-version"),
+    ),
+    (
+        "pyproject.toml",
+        include_bytes!("../runtime/pyproject.toml"),
+    ),
+    ("uv.lock", include_bytes!("../runtime/uv.lock")),
+    (WORKER_NAME, include_bytes!("../runtime/rmbg_runtime.py")),
+];
 
 pub enum SetupError {
     User(anyhow::Error),
@@ -207,22 +220,95 @@ pub fn find_runtime_dir() -> anyhow::Result<PathBuf> {
         if let Some(parent) = executable.parent() {
             let bundled = parent.join(RUNTIME_DIR_NAME);
             if bundled.join(WORKER_NAME).is_file() {
-                return Ok(bundled);
+                return validate_runtime_dir(bundled);
             }
         }
     }
 
-    validate_runtime_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join(RUNTIME_DIR_NAME))
+    let source_runtime = Path::new(env!("CARGO_MANIFEST_DIR")).join(RUNTIME_DIR_NAME);
+    if source_runtime.join(WORKER_NAME).is_file() {
+        return validate_runtime_dir(source_runtime);
+    }
+
+    materialize_embedded_runtime(&runtime_cache_root()?)
 }
 
 fn validate_runtime_dir(path: PathBuf) -> anyhow::Result<PathBuf> {
-    if path.join(WORKER_NAME).is_file() && path.join("pyproject.toml").is_file() {
+    if path.join(WORKER_NAME).is_file()
+        && path.join("pyproject.toml").is_file()
+        && path.join("uv.lock").is_file()
+    {
         return Ok(path);
     }
     bail!(
-        "RMBG runtime not found at {}; reinstall the complete release archive or set RMBG_RUNTIME_DIR",
+        "RMBG runtime is incomplete at {}; reinstall rmbg or set RMBG_RUNTIME_DIR",
         path.display()
     )
+}
+
+fn runtime_cache_root() -> anyhow::Result<PathBuf> {
+    if let Some(path) = env::var_os("RMBG_CACHE_DIR") {
+        return Ok(PathBuf::from(path).join(RUNTIME_DIR_NAME));
+    }
+
+    #[cfg(windows)]
+    if let Some(path) = env::var_os("LOCALAPPDATA") {
+        return Ok(PathBuf::from(path).join("rmbg-cli").join(RUNTIME_DIR_NAME));
+    }
+
+    #[cfg(target_os = "macos")]
+    if let Some(path) = env::var_os("HOME") {
+        return Ok(PathBuf::from(path)
+            .join("Library")
+            .join("Caches")
+            .join("rmbg-cli")
+            .join(RUNTIME_DIR_NAME));
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        if let Some(path) = env::var_os("XDG_CACHE_HOME") {
+            return Ok(PathBuf::from(path).join("rmbg-cli").join(RUNTIME_DIR_NAME));
+        }
+        if let Some(path) = env::var_os("HOME") {
+            return Ok(PathBuf::from(path)
+                .join(".cache")
+                .join("rmbg-cli")
+                .join(RUNTIME_DIR_NAME));
+        }
+    }
+
+    bail!("unable to determine a runtime cache directory; set RMBG_CACHE_DIR")
+}
+
+fn materialize_embedded_runtime(path: &Path) -> anyhow::Result<PathBuf> {
+    fs::create_dir_all(path)
+        .with_context(|| format!("creating runtime cache at {}", path.display()))?;
+
+    for (name, contents) in EMBEDDED_RUNTIME_FILES {
+        let destination = path.join(name);
+        if fs::read(&destination).is_ok_and(|existing| existing.as_slice() == *contents) {
+            continue;
+        }
+
+        let temporary = path.join(format!(".{name}.tmp-{}", std::process::id()));
+        fs::write(&temporary, contents)
+            .with_context(|| format!("writing embedded runtime file {}", temporary.display()))?;
+        if let Err(error) = fs::rename(&temporary, &destination) {
+            if destination.exists() {
+                fs::remove_file(&destination)
+                    .with_context(|| format!("replacing runtime file {}", destination.display()))?;
+                fs::rename(&temporary, &destination).with_context(|| {
+                    format!("installing runtime file {}", destination.display())
+                })?;
+            } else {
+                return Err(error)
+                    .with_context(|| format!("installing runtime file {}", destination.display()));
+            }
+        }
+    }
+
+    validate_runtime_dir(path.to_path_buf())
 }
 
 pub fn device_label(device: Device) -> &'static str {
@@ -250,5 +336,31 @@ mod tests {
         assert!(needs_login("Not logged in"));
         assert!(needs_login("Invalid user token"));
         assert!(!needs_login("failed to resolve huggingface.co"));
+    }
+
+    #[test]
+    fn materializes_and_refreshes_the_embedded_runtime_without_removing_environment() {
+        let temp = tempfile::tempdir().unwrap();
+        let runtime = temp.path().join("runtime");
+
+        materialize_embedded_runtime(&runtime).unwrap();
+        assert_eq!(
+            fs::read(runtime.join(WORKER_NAME)).unwrap(),
+            include_bytes!("../runtime/rmbg_runtime.py")
+        );
+
+        fs::create_dir(runtime.join(".venv")).unwrap();
+        fs::write(runtime.join(".venv").join("marker"), b"keep").unwrap();
+        fs::write(runtime.join(WORKER_NAME), b"stale").unwrap();
+
+        materialize_embedded_runtime(&runtime).unwrap();
+        assert_eq!(
+            fs::read(runtime.join(".venv").join("marker")).unwrap(),
+            b"keep"
+        );
+        assert_eq!(
+            fs::read(runtime.join(WORKER_NAME)).unwrap(),
+            include_bytes!("../runtime/rmbg_runtime.py")
+        );
     }
 }
