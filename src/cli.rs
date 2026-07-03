@@ -1,104 +1,99 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 
-use crate::detector::Rgb;
-use crate::processor::{BackgroundColor, OutputMode};
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
+pub enum Device {
+    Auto,
+    Cuda,
+    Mps,
+    Cpu,
+}
+
+impl Device {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Cuda => "cuda",
+            Self::Mps => "mps",
+            Self::Cpu => "cpu",
+        }
+    }
+}
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "rmtg",
+    name = "rmbg",
     version,
-    about = "Remove transparency checkerboard grids from images",
+    about = "Remove image backgrounds locally with BRIA RMBG-2.0",
     long_about = None
 )]
 pub struct Cli {
     /// Input image path
     pub input: PathBuf,
 
-    /// Output image path
+    /// Output PNG path (default: <input>-no-bg.png)
     #[arg(short, long)]
     pub output: Option<PathBuf>,
 
-    /// Replace removed grid with a solid color (e.g. white, #FFFFFF, 255,255,255)
+    /// Composite the foreground onto a solid color (#RRGGBB, R,G,B, white, black)
     #[arg(long, value_name = "COLOR")]
     pub background: Option<String>,
 
-    /// Color match tolerance
-    #[arg(long, default_value_t = 12)]
-    pub tolerance: u8,
+    /// Inference device; auto prefers CUDA, then MPS, then CPU
+    #[arg(long, value_enum, default_value_t = Device::Auto)]
+    pub device: Device,
 
-    /// Override first checker color (e.g. #FFFFFF or 255,255,255)
-    #[arg(long, value_name = "COLOR")]
-    pub color_a: Option<String>,
-
-    /// Override second checker color (e.g. #CCCCCC or 204,204,204)
-    #[arg(long, value_name = "COLOR")]
-    pub color_b: Option<String>,
-
-    /// Log detected parameters and masked pixel count
+    /// Print runtime, device, model, and output information
     #[arg(short, long)]
     pub verbose: bool,
 }
 
 impl Cli {
-    pub fn output_mode(&self) -> anyhow::Result<OutputMode> {
-        match &self.background {
-            None => Ok(OutputMode::Transparent),
-            Some(value) => parse_background_color(value).map(OutputMode::Solid),
-        }
+    pub fn background_rgb(&self) -> anyhow::Result<Option<[u8; 3]>> {
+        self.background.as_deref().map(parse_rgb).transpose()
     }
 
-    pub fn color_a(&self) -> anyhow::Result<Option<Rgb>> {
-        self.color_a.as_deref().map(parse_rgb).transpose()
-    }
-
-    pub fn color_b(&self) -> anyhow::Result<Option<Rgb>> {
-        self.color_b.as_deref().map(parse_rgb).transpose()
+    pub fn output_path(&self) -> PathBuf {
+        self.output
+            .clone()
+            .unwrap_or_else(|| default_output_path(&self.input))
     }
 }
 
-fn parse_rgb(value: &str) -> anyhow::Result<Rgb> {
+pub fn default_output_path(input: &Path) -> PathBuf {
+    let stem = input
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("output");
+    input.with_file_name(format!("{stem}-no-bg.png"))
+}
+
+fn parse_rgb(value: &str) -> anyhow::Result<[u8; 3]> {
     let trimmed = value.trim();
     let hex = trimmed.strip_prefix('#').unwrap_or(trimmed);
 
     if hex.len() == 6 && hex.chars().all(|c| c.is_ascii_hexdigit()) {
-        let r = u8::from_str_radix(&hex[0..2], 16)?;
-        let g = u8::from_str_radix(&hex[2..4], 16)?;
-        let b = u8::from_str_radix(&hex[4..6], 16)?;
-        return Ok(Rgb { r, g, b });
+        return Ok([
+            u8::from_str_radix(&hex[0..2], 16)?,
+            u8::from_str_radix(&hex[2..4], 16)?,
+            u8::from_str_radix(&hex[4..6], 16)?,
+        ]);
     }
 
     if trimmed.eq_ignore_ascii_case("white") {
-        return Ok(Rgb {
-            r: 255,
-            g: 255,
-            b: 255,
-        });
+        return Ok([255, 255, 255]);
     }
-
     if trimmed.eq_ignore_ascii_case("black") {
-        return Ok(Rgb { r: 0, g: 0, b: 0 });
+        return Ok([0, 0, 0]);
     }
 
     let parts: Vec<&str> = trimmed.split(',').map(str::trim).collect();
     if parts.len() == 3 {
-        let r = parts[0].parse()?;
-        let g = parts[1].parse()?;
-        let b = parts[2].parse()?;
-        return Ok(Rgb { r, g, b });
+        return Ok([parts[0].parse()?, parts[1].parse()?, parts[2].parse()?]);
     }
 
     anyhow::bail!("invalid color '{value}': use #RRGGBB, R,G,B, white, or black")
-}
-
-fn parse_background_color(value: &str) -> anyhow::Result<BackgroundColor> {
-    let rgb = parse_rgb(value)?;
-    Ok(BackgroundColor {
-        r: rgb.r,
-        g: rgb.g,
-        b: rgb.b,
-    })
 }
 
 #[cfg(test)]
@@ -106,34 +101,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_hex_and_named_colors() {
-        assert_eq!(
-            parse_rgb("#ff00aa").unwrap(),
-            Rgb {
-                r: 255,
-                g: 0,
-                b: 170
-            }
-        );
-        assert_eq!(
-            parse_rgb("white").unwrap(),
-            Rgb {
-                r: 255,
-                g: 255,
-                b: 255
-            }
-        );
+    fn parses_supported_colors() {
+        assert_eq!(parse_rgb("#ff00aa").unwrap(), [255, 0, 170]);
+        assert_eq!(parse_rgb("10, 20, 30").unwrap(), [10, 20, 30]);
+        assert_eq!(parse_rgb("white").unwrap(), [255, 255, 255]);
+        assert!(parse_rgb("not-a-color").is_err());
     }
 
     #[test]
-    fn parses_comma_separated_rgb() {
+    fn derives_default_output_path() {
         assert_eq!(
-            parse_rgb("10, 20, 30").unwrap(),
-            Rgb {
-                r: 10,
-                g: 20,
-                b: 30
-            }
+            default_output_path(Path::new("images/photo.jpg")),
+            PathBuf::from("images/photo-no-bg.png")
         );
     }
 }

@@ -1,7 +1,5 @@
 mod cli;
-mod detector;
-mod io;
-mod processor;
+mod runtime;
 
 use std::process::ExitCode;
 
@@ -9,89 +7,54 @@ use anyhow::Context;
 use clap::Parser;
 
 use cli::Cli;
-use detector::{detect_checkerboard, DetectError, DetectOptions};
-use io::{default_output_path, load_image, save_png};
-use processor::{ProcessOptions, ProcessResult};
 
 fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
-        Err(err) => {
-            if let Some(detect_err) = err.downcast_ref::<DetectError>() {
-                eprintln!("error: {detect_err}");
-                return ExitCode::from(2);
-            }
-
-            if err.downcast_ref::<io::IoError>().is_some() {
-                eprintln!("error: {err:#}");
-                return ExitCode::from(2);
-            }
-
+        Err(AppError::User(err)) => {
             eprintln!("error: {err:#}");
             ExitCode::from(1)
+        }
+        Err(AppError::Runtime(err)) => {
+            eprintln!("error: {err:#}");
+            ExitCode::from(2)
         }
     }
 }
 
-fn run() -> anyhow::Result<()> {
+enum AppError {
+    User(anyhow::Error),
+    Runtime(anyhow::Error),
+}
+
+fn run() -> Result<(), AppError> {
     let cli = Cli::parse();
-    let input = &cli.input;
-
-    if !input.exists() {
-        anyhow::bail!("input file not found: {}", input.display());
+    if !cli.input.is_file() {
+        return Err(AppError::User(anyhow::anyhow!(
+            "input file not found: {}",
+            cli.input.display()
+        )));
     }
 
-    let image = load_image(input)?;
-    let detect_options = DetectOptions {
-        color_a: cli.color_a()?,
-        color_b: cli.color_b()?,
-        ..DetectOptions::default()
-    };
-
-    let params = detect_checkerboard(&image, &detect_options)?;
-    if cli.verbose {
-        eprintln!(
-            "detected colors: ({},{},{}) / ({},{},{})",
-            params.color_a.r,
-            params.color_a.g,
-            params.color_a.b,
-            params.color_b.r,
-            params.color_b.g,
-            params.color_b.b
-        );
-    }
-
-    let ProcessResult {
-        image: output_image,
-        masked_pixels,
-    } = processor::remove_checkerboard(
-        &image,
-        &params,
-        &ProcessOptions {
-            tolerance: cli.tolerance,
-            output: cli.output_mode()?,
-        },
-    );
-
-    if masked_pixels == 0 {
-        anyhow::bail!("no checkerboard pixels detected; try adjusting --tolerance");
+    let background = cli.background_rgb().map_err(AppError::User)?;
+    let output = cli.output_path();
+    if output == cli.input {
+        return Err(AppError::User(anyhow::anyhow!(
+            "output path must differ from input path"
+        )));
     }
 
     if cli.verbose {
-        eprintln!("masked pixels: {masked_pixels}");
+        eprintln!("model: briaai/RMBG-2.0");
+        eprintln!("requested device: {}", runtime::device_label(cli.device));
     }
 
-    let output = cli
-        .output
-        .clone()
-        .unwrap_or_else(|| default_output_path(input));
-
-    save_png(&output, &output_image)
-        .with_context(|| format!("writing output to {}", output.display()))?;
+    runtime::run_worker(&cli, &output, background)
+        .with_context(|| format!("processing {}", cli.input.display()))
+        .map_err(AppError::Runtime)?;
 
     if cli.verbose {
         eprintln!("wrote {}", output.display());
     }
-
     Ok(())
 }

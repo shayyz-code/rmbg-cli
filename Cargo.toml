@@ -1,17 +1,19 @@
 [package]
-name = "rmtg"
-version = "0.2.0"
+name = "rmbg-cli"
+version = "0.3.0"
 edition = "2021"
-description = "Remove transparency checkerboard grids from images"
+description = "Remove image backgrounds locally with BRIA RMBG-2.0"
 license = "MIT"
-repository = "https://github.com/shayyz-code/rmtg"
+repository = "https://github.com/shayyz-code/rmbg-cli"
 readme = "README.md"
+
+[[bin]]
+name = "rmbg"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "bmp", "gif", "tiff"] }
-thiserror = "2"
 
 [dev-dependencies]
 assert_cmd = "2"

@@ -1,91 +1,29 @@
-mod common;
-
 use assert_cmd::cargo::cargo_bin_cmd;
 use assert_cmd::Command;
-use image::RgbaImage;
 use predicates::prelude::*;
-use tempfile::tempdir;
-
-use common::{checkerboard_fixture, ensure_fixtures, foreground_on_grid_fixture, write_fixture};
 
 fn bin() -> Command {
-    cargo_bin_cmd!("rmtg")
+    cargo_bin_cmd!("rmbg")
 }
 
 #[test]
-fn help_shows_usage() {
+fn help_describes_model_cli() {
     bin()
         .arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Remove transparency checkerboard"));
+        .stdout(predicate::str::contains("BRIA RMBG-2.0"))
+        .stdout(predicate::str::contains("--device"))
+        .stdout(predicate::str::contains("--background"));
 }
 
 #[test]
-fn removes_checkerboard_to_transparent_png() {
-    let dir = tempdir().unwrap();
-    let input = dir.path().join("input.png");
-    let output = dir.path().join("output.png");
-
-    write_fixture(&input, &checkerboard_fixture(64, 64, 8));
-
+fn version_uses_renamed_executable() {
     bin()
-        .arg(&input)
-        .arg("-o")
-        .arg(&output)
-        .arg("-v")
+        .arg("--version")
         .assert()
         .success()
-        .stderr(predicate::str::contains("detected colors:"));
-
-    let result = image::open(&output).unwrap().to_rgba8();
-    assert_eq!(result.dimensions(), (64, 64));
-    for pixel in result.pixels() {
-        assert_eq!(pixel[3], 0, "expected fully transparent output");
-    }
-}
-
-#[test]
-fn preserves_foreground_on_checkerboard() {
-    let dir = tempdir().unwrap();
-    let input = dir.path().join("input.png");
-    let output = dir.path().join("output.png");
-
-    write_fixture(&input, &foreground_on_grid_fixture());
-
-    bin().arg(&input).arg("-o").arg(&output).assert().success();
-
-    let result = image::open(&output).unwrap().to_rgba8();
-    let center = result.get_pixel(30, 30);
-    assert_eq!(center[0], 255);
-    assert_eq!(center[1], 0);
-    assert_eq!(center[2], 0);
-    assert_eq!(center[3], 255);
-}
-
-#[test]
-fn background_flag_replaces_grid_with_solid_color() {
-    let dir = tempdir().unwrap();
-    let input = dir.path().join("input.png");
-    let output = dir.path().join("output.png");
-
-    write_fixture(&input, &checkerboard_fixture(32, 32, 8));
-
-    bin()
-        .arg(&input)
-        .arg("-o")
-        .arg(&output)
-        .arg("--background")
-        .arg("#00ff00")
-        .assert()
-        .success();
-
-    let result = image::open(&output).unwrap().to_rgba8();
-    let pixel = result.get_pixel(0, 0);
-    assert_eq!(pixel[0], 0);
-    assert_eq!(pixel[1], 255);
-    assert_eq!(pixel[2], 0);
-    assert_eq!(pixel[3], 255);
+        .stdout(predicate::str::starts_with("rmbg 0.3.0"));
 }
 
 #[test]
@@ -99,26 +37,29 @@ fn missing_input_exits_with_user_error() {
 }
 
 #[test]
-fn committed_fixtures_are_processable() {
-    let (checkerboard, foreground) = ensure_fixtures();
-    let dir = tempdir().unwrap();
-
-    let checker_out = dir.path().join("checker-out.png");
+fn invalid_background_exits_with_user_error_before_starting_runtime() {
+    let input = tempfile::NamedTempFile::new().unwrap();
     bin()
-        .arg(&checkerboard)
-        .arg("-o")
-        .arg(&checker_out)
+        .arg(input.path())
+        .arg("--background")
+        .arg("invalid")
         .assert()
-        .success();
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("invalid color"));
+}
 
-    let foreground_out = dir.path().join("foreground-out.png");
+#[test]
+fn refusing_to_overwrite_input_is_a_user_error() {
+    let input = tempfile::Builder::new().suffix(".png").tempfile().unwrap();
     bin()
-        .arg(&foreground)
-        .arg("-o")
-        .arg(&foreground_out)
+        .arg(input.path())
+        .arg("--output")
+        .arg(input.path())
         .assert()
-        .success();
-
-    let checker_result: RgbaImage = image::open(checker_out).unwrap().to_rgba8();
-    assert!(checker_result.pixels().all(|p| p[3] == 0));
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "output path must differ from input path",
+        ));
 }
