@@ -22,23 +22,23 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             archive: tar.gz
-            asset_name: rmtg
+            asset_name: rmbg
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
             archive: tar.gz
-            asset_name: rmtg
+            asset_name: rmbg
           - target: x86_64-apple-darwin
             os: macos-latest
             archive: tar.gz
-            asset_name: rmtg
+            asset_name: rmbg
           - target: aarch64-apple-darwin
             os: macos-latest
             archive: tar.gz
-            asset_name: rmtg
+            asset_name: rmbg
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             archive: zip
-            asset_name: rmtg.exe
+            asset_name: rmbg.exe
 
     steps:
       - name: Checkout
@@ -60,7 +60,17 @@ jobs:
         run: |
           mkdir -p dist
           cp "target/${{ matrix.target }}/release/${{ matrix.asset_name }}" dist/
-          tar -czf "rmtg-${{ matrix.target }}.tar.gz" -C dist "${{ matrix.asset_name }}"
+          cp -R runtime dist/runtime
+          rm -rf dist/runtime/tests dist/runtime/__pycache__
+          tar -czf "rmbg-${{ matrix.target }}.tar.gz" -C dist "${{ matrix.asset_name }}" runtime
+
+      - name: Verify package contents (Unix)
+        if: matrix.archive == 'tar.gz'
+        run: |
+          test -x "dist/${{ matrix.asset_name }}"
+          test -f dist/runtime/rmbg_runtime.py
+          test -f dist/runtime/pyproject.toml
+          test -f dist/runtime/uv.lock
 
       - name: Package (Windows)
         if: matrix.archive == 'zip'
@@ -68,13 +78,24 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist
           Copy-Item "target/${{ matrix.target }}/release/${{ matrix.asset_name }}" dist/
-          Compress-Archive -Path "dist/${{ matrix.asset_name }}" -DestinationPath "rmtg-${{ matrix.target }}.zip"
+          Copy-Item -Recurse runtime dist/runtime
+          Remove-Item -Recurse -Force dist/runtime/tests
+          Compress-Archive -Path "dist/${{ matrix.asset_name }}", "dist/runtime" -DestinationPath "rmbg-${{ matrix.target }}.zip"
+
+      - name: Verify package contents (Windows)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "dist/${{ matrix.asset_name }}")) { throw "missing executable" }
+          if (-not (Test-Path "dist/runtime/rmbg_runtime.py")) { throw "missing worker" }
+          if (-not (Test-Path "dist/runtime/pyproject.toml")) { throw "missing project metadata" }
+          if (-not (Test-Path "dist/runtime/uv.lock")) { throw "missing lockfile" }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: rmtg-${{ matrix.target }}
-          path: rmtg-${{ matrix.target }}.*
+          name: rmbg-${{ matrix.target }}
+          path: rmbg-${{ matrix.target }}.*
 
   release:
     name: Publish GitHub Release
