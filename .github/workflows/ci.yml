@@ -6,54 +6,107 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
-    name: Test (${{ matrix.os }})
+  quality:
+    name: Rust and npm quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: npm run check:versions
+      - run: npm test
+      - run: sh -n install.sh
+
+  msrv:
+    name: Rust 1.75 compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.75"
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --locked
+
+  native:
+    name: Native tests (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            executable: rmbg
+            npm_package: rmbg2-cli-linux-x64-gnu
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            executable: rmbg
+            npm_package: rmbg2-cli-linux-arm64-gnu
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            executable: rmbg
+            npm_package: rmbg2-cli-darwin-arm64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            executable: rmbg.exe
+            npm_package: rmbg2-cli-win32-x64-msvc
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: cargo test --all --locked --target ${{ matrix.target }}
+      - run: cargo build --locked --target ${{ matrix.target }}
+      - name: Smoke-test npm launcher (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p "npm/platforms/${{ matrix.npm_package }}/bin"
+          cp "target/${{ matrix.target }}/debug/${{ matrix.executable }}" "npm/platforms/${{ matrix.npm_package }}/bin/rmbg"
+          chmod +x "npm/platforms/${{ matrix.npm_package }}/bin/rmbg"
+          NODE_PATH="$PWD/npm/platforms" node npm/bin/rmbg.js --help
+      - name: Smoke-test npm launcher (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "npm/platforms/${{ matrix.npm_package }}/bin" | Out-Null
+          Copy-Item "target/${{ matrix.target }}/debug/${{ matrix.executable }}" "npm/platforms/${{ matrix.npm_package }}/bin/rmbg.exe"
+          $env:NODE_PATH = "$PWD/npm/platforms"
+          node npm/bin/rmbg.js --help
+          [void][scriptblock]::Create((Get-Content install.ps1 -Raw))
 
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
-      - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
-
-      - name: Run tests
-        run: cargo test --all
-
-  runtime-test:
-    name: Python runtime tests
+  runtime:
+    name: Locked Python runtime
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-
-      - name: Sync locked runtime
-        run: uv sync --project runtime --frozen
-
-      - name: Run Python tests
-        run: uv run --project runtime --frozen python runtime/tests/test_runtime.py
+      - run: uv sync --project runtime --frozen
+      - run: uv run --project runtime --frozen python runtime/tests/test_runtime.py

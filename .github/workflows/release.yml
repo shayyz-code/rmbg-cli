@@ -7,13 +7,15 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   build:
-    name: Build (${{ matrix.target }})
+    name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -21,96 +23,122 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            archive: tar.gz
-            asset_name: rmbg
+            executable: rmbg
+            archive: rmbg-x86_64-unknown-linux-gnu.tar.gz
+            npm_package: rmbg2-cli-linux-x64-gnu
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
-            archive: tar.gz
-            asset_name: rmbg
-          - target: x86_64-apple-darwin
-            os: macos-latest
-            archive: tar.gz
-            asset_name: rmbg
+            executable: rmbg
+            archive: rmbg-aarch64-unknown-linux-gnu.tar.gz
+            npm_package: rmbg2-cli-linux-arm64-gnu
           - target: aarch64-apple-darwin
             os: macos-latest
-            archive: tar.gz
-            asset_name: rmbg
+            executable: rmbg
+            archive: rmbg-aarch64-apple-darwin.tar.gz
+            npm_package: rmbg2-cli-darwin-arm64
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            archive: zip
-            asset_name: rmbg.exe
-
+            executable: rmbg.exe
+            archive: rmbg-x86_64-pc-windows-msvc.zip
+            npm_package: rmbg2-cli-win32-x64-msvc
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: Build release binary
-        run: cargo build --release --target ${{ matrix.target }}
-
-      - name: Package (Unix)
-        if: matrix.archive == 'tar.gz'
-        run: |
-          mkdir -p dist
-          cp "target/${{ matrix.target }}/release/${{ matrix.asset_name }}" dist/
-          cp -R runtime dist/runtime
-          rm -rf dist/runtime/tests dist/runtime/__pycache__
-          tar -czf "rmbg-${{ matrix.target }}.tar.gz" -C dist "${{ matrix.asset_name }}" runtime
-
-      - name: Verify package contents (Unix)
-        if: matrix.archive == 'tar.gz'
-        run: |
-          test -x "dist/${{ matrix.asset_name }}"
-          test -f dist/runtime/rmbg_runtime.py
-          test -f dist/runtime/pyproject.toml
-          test -f dist/runtime/uv.lock
-
-      - name: Package (Windows)
-        if: matrix.archive == 'zip'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path dist
-          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.asset_name }}" dist/
-          Copy-Item -Recurse runtime dist/runtime
-          Remove-Item -Recurse -Force dist/runtime/tests
-          Compress-Archive -Path "dist/${{ matrix.asset_name }}", "dist/runtime" -DestinationPath "rmbg-${{ matrix.target }}.zip"
-
-      - name: Verify package contents (Windows)
-        if: matrix.archive == 'zip'
-        shell: pwsh
-        run: |
-          if (-not (Test-Path "dist/${{ matrix.asset_name }}")) { throw "missing executable" }
-          if (-not (Test-Path "dist/runtime/rmbg_runtime.py")) { throw "missing worker" }
-          if (-not (Test-Path "dist/runtime/pyproject.toml")) { throw "missing project metadata" }
-          if (-not (Test-Path "dist/runtime/uv.lock")) { throw "missing lockfile" }
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - uses: Swatinem/rust-cache@v2
         with:
-          name: rmbg-${{ matrix.target }}
-          path: rmbg-${{ matrix.target }}.*
+          key: release-${{ matrix.target }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Package Unix executable and npm package
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist "npm/platforms/${{ matrix.npm_package }}/bin"
+          cp "target/${{ matrix.target }}/release/${{ matrix.executable }}" dist/rmbg
+          cp "target/${{ matrix.target }}/release/${{ matrix.executable }}" "npm/platforms/${{ matrix.npm_package }}/bin/rmbg"
+          chmod +x dist/rmbg "npm/platforms/${{ matrix.npm_package }}/bin/rmbg"
+          tar -czf "dist/${{ matrix.archive }}" -C dist rmbg
+          npm pack "npm/platforms/${{ matrix.npm_package }}" --pack-destination dist
+
+      - name: Package Windows executable and npm package
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist, "npm/platforms/${{ matrix.npm_package }}/bin" | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.executable }}" dist/rmbg.exe
+          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.executable }}" "npm/platforms/${{ matrix.npm_package }}/bin/rmbg.exe"
+          Compress-Archive -Path dist/rmbg.exe -DestinationPath "dist/${{ matrix.archive }}"
+          npm pack "npm/platforms/${{ matrix.npm_package }}" --pack-destination dist
+
+      - uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            dist/${{ matrix.archive }}
+            dist/rmbg2-cli-*.tgz
+          if-no-files-found: error
 
   release:
-    name: Publish GitHub Release
+    name: Publish release
     needs: build
     runs-on: ubuntu-latest
-
     steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          path: artifacts
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Verify release version
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          test "$version" = "$(node -p "require('./package.json').version")"
+          npm run check:versions
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
           merge-multiple: true
-
+      - name: Add launcher package and installers
+        run: |
+          npm pack . --pack-destination dist
+          cp install.sh dist/rmbg-installer.sh
+          cp install.ps1 dist/rmbg-installer.ps1
+          cd dist
+          sha256sum rmbg-*.tar.gz rmbg-*.zip rmbg2-cli-*.tgz > SHA256SUMS
+      - name: Publish npm packages with trusted publishing
+        if: vars.NPM_TRUSTED_PUBLISHING == 'true'
+        shell: bash
+        run: |
+          npm install --global npm@latest
+          version="${GITHUB_REF_NAME#v}"
+          publish_if_missing() {
+            package="$1"
+            tarball="$2"
+            if npm view "$package@$version" version >/dev/null 2>&1; then
+              echo "$package@$version is already published"
+            else
+              npm publish "$tarball" --access public
+            fi
+          }
+          publish_if_missing rmbg2-cli-linux-x64-gnu "dist/rmbg2-cli-linux-x64-gnu-$version.tgz"
+          publish_if_missing rmbg2-cli-linux-arm64-gnu "dist/rmbg2-cli-linux-arm64-gnu-$version.tgz"
+          publish_if_missing rmbg2-cli-darwin-arm64 "dist/rmbg2-cli-darwin-arm64-$version.tgz"
+          publish_if_missing rmbg2-cli-win32-x64-msvc "dist/rmbg2-cli-win32-x64-msvc-$version.tgz"
+          publish_if_missing rmbg2-cli "dist/rmbg2-cli-$version.tgz"
+      - uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: dist/*
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: artifacts/*
+          files: dist/*
