@@ -13,6 +13,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   and validate that it loads on the selected device.
 - Added actionable setup guidance for missing uv, non-interactive
   authentication, and unaccepted BRIA model terms.
+- Added npm distribution through `rmbg2-cli` and four platform-specific native
+  packages for Linux glibc x64/ARM64, macOS ARM64, and Windows x64.
+- Added checksummed curl and PowerShell installers backed by GitHub Releases.
+- Added tag-driven native builds, package verification, build provenance, and
+  tokenless npm trusted-publishing support.
+
+### Changed
+
+- Native executables now embed the locked Python runtime sources and
+  materialize them into the user cache, so release archives no longer require
+  a sibling `runtime/` directory.
+- Cargo registry publishing is disabled; npm is the supported package registry.
 
 ## [0.3.0] - 2026-07-03
 

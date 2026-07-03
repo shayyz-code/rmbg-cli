@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/shayyz-code/rmbg-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/shayyz-code/rmbg-cli/actions/workflows/ci.yml)
 [![Release](https://github.com/shayyz-code/rmbg-cli/actions/workflows/release.yml/badge.svg)](https://github.com/shayyz-code/rmbg-cli/actions/workflows/release.yml)
+[![npm](https://img.shields.io/npm/v/rmbg2-cli.svg)](https://www.npmjs.com/package/rmbg2-cli)
 [![Code License: MIT](https://img.shields.io/badge/code-MIT-blue.svg)](LICENSE)
 [![Model License: CC BY--NC 4.0](https://img.shields.io/badge/model-CC_BY--NC_4.0-orange.svg)](https://huggingface.co/briaai/RMBG-2.0)
 
@@ -39,14 +40,14 @@ values below are conservative project guidance based on that architecture, the
 
 | Resource | Minimum | Recommended |
 |----------|---------|-------------|
-| Platform | Supported 64-bit Linux, macOS, or Windows release target | Current 64-bit OS on x86_64 or ARM64 |
+| Platform | Linux glibc x64/ARM64, Apple Silicon macOS, or Windows x64 | A current release of one of the supported operating systems |
 | CPU | 2 cores; CPU-only inference is supported | 4 or more modern CPU cores |
 | Memory | 8 GB RAM | 16 GB RAM |
 | Free storage | 5 GB for dependencies, weights, and caches | 10 GB, especially for Linux CUDA packages |
 | Acceleration | None; a GPU is optional | NVIDIA GPU with 6 GB VRAM, or Apple Silicon with 16 GB unified memory |
 | Network | Required during initial setup | Broadband connection for the model and dependency download |
 | Account | Hugging Face account with the RMBG-2.0 terms accepted | `HF_TOKEN` configured for non-interactive setup |
-| Software | [uv](https://docs.astral.sh/uv/) and Python 3.10–3.12, managed by uv | Rust 1.75+ only when building from source |
+| Software | [uv](https://docs.astral.sh/uv/) and Python 3.10–3.12, managed by uv | Node.js 18+ for npm installation; Rust 1.75+ only when building from source |
 
 The official implementation depends on PyTorch, Torchvision, Pillow, Kornia,
 and Transformers. CUDA, Apple MPS, and CPU execution are selected automatically
@@ -54,24 +55,45 @@ by this CLI.
 
 ## Installation
 
-Download a release archive and keep its `rmbg` executable and `runtime/`
-directory together. Alternatively, build from source:
+Install the native CLI from npm:
+
+```bash
+npm install --global rmbg2-cli
+rmbg setup
+```
+
+Node.js is only used by the npm launcher. The image processing runtime remains
+local Python, Transformers, and PyTorch managed by uv.
+
+To install without Node.js on Linux or macOS:
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shayyz-code/rmbg-cli/releases/latest/download/rmbg-installer.sh | sh
+```
+
+On Windows PowerShell:
+
+```powershell
+irm https://github.com/shayyz-code/rmbg-cli/releases/latest/download/rmbg-installer.ps1 | iex
+```
+
+Both direct installers verify the downloaded archive against the release
+SHA-256 manifest, install into a user-local bin directory, and print PATH
+guidance when needed. Set `RMBG_INSTALL_DIR` to choose another directory or
+`RMBG_VERSION` to install a specific release.
+
+Then prepare the local model runtime once:
+
+```bash
+rmbg setup
+```
+
+To build from source instead:
 
 ```bash
 git clone https://github.com/shayyz-code/rmbg-cli.git
 cd rmbg-cli
 cargo build --release
-```
-
-Run setup once from the extracted release directory:
-
-```bash
-./rmbg setup # Windows: .\rmbg.exe setup
-```
-
-For a source build, use:
-
-```bash
 ./target/release/rmbg setup
 ```
 
@@ -149,6 +171,8 @@ uv sync --project runtime --frozen
 cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 cargo test --all
+npm run check:versions
+npm test
 uv run --project runtime --frozen python runtime/tests/test_runtime.py
 ```
 
