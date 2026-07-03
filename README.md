@@ -24,17 +24,9 @@ The example below was processed locally with:
 rmbg marin.png -o marin-no-bg.png
 ```
 
-<!--
-Upload `marin.png` and `marin-no-bg.png` through GitHub's web editor, then
-replace the two placeholder cells below with:
-
-<img src="BEFORE_GITHUB_ATTACHMENT_URL" alt="Before background removal" width="420">
-<img src="AFTER_GITHUB_ATTACHMENT_URL" alt="After background removal" width="420">
--->
-
 | Before | After — transparent PNG |
 |:------:|:-----------------------:|
-| _Upload `marin.png` and insert its GitHub attachment URL here._ | _Upload `marin-no-bg.png` and insert its GitHub attachment URL here._ |
+| <img width="427" height="640" alt="marin" src="https://github.com/user-attachments/assets/a810e266-607f-43d5-b8e6-845bed9f1d67" /> | <img width="427" height="640" alt="marin-no-bg" src="https://github.com/user-attachments/assets/99711dfc-6ee7-4df0-bdb1-09e7b64b8d44" /> |
 
 ## System requirements
 
