@@ -16,10 +16,51 @@ hosted inference API is used.
 > The repository code remains MIT-licensed; that license does not extend to
 > the model weights.
 
-## Requirements and installation
+## Example
 
-- A Hugging Face account that has accepted the RMBG-2.0 access conditions
-- Rust 1.75+ when building from source
+The example below was processed locally with:
+
+```bash
+rmbg marin.png -o marin-no-bg.png
+```
+
+<!--
+Upload `marin.png` and `marin-no-bg.png` through GitHub's web editor, then
+replace the two placeholder cells below with:
+
+<img src="BEFORE_GITHUB_ATTACHMENT_URL" alt="Before background removal" width="420">
+<img src="AFTER_GITHUB_ATTACHMENT_URL" alt="After background removal" width="420">
+-->
+
+| Before | After — transparent PNG |
+|:------:|:-----------------------:|
+| _Upload `marin.png` and insert its GitHub attachment URL here._ | _Upload `marin-no-bg.png` and insert its GitHub attachment URL here._ |
+
+## System requirements
+
+BRIA publishes RMBG-2.0 as a 0.2B-parameter model with FP32 weights and a
+1024×1024 inference size, but does not publish minimum RAM or VRAM figures. The
+values below are conservative project guidance based on that architecture, the
+844 MB pinned weights, and the local PyTorch runtime. See the
+[official model card](https://huggingface.co/briaai/RMBG-2.0) and
+[BRIA repository](https://github.com/Bria-AI/RMBG-2.0).
+
+| Resource | Minimum | Recommended |
+|----------|---------|-------------|
+| Platform | Supported 64-bit Linux, macOS, or Windows release target | Current 64-bit OS on x86_64 or ARM64 |
+| CPU | 2 cores; CPU-only inference is supported | 4 or more modern CPU cores |
+| Memory | 8 GB RAM | 16 GB RAM |
+| Free storage | 5 GB for dependencies, weights, and caches | 10 GB, especially for Linux CUDA packages |
+| Acceleration | None; a GPU is optional | NVIDIA GPU with 6 GB VRAM, or Apple Silicon with 16 GB unified memory |
+| Network | Required during initial setup | Broadband connection for the model and dependency download |
+| Account | Hugging Face account with the RMBG-2.0 terms accepted | `HF_TOKEN` configured for non-interactive setup |
+| Software | [uv](https://docs.astral.sh/uv/) and Python 3.10–3.12, managed by uv | Rust 1.75+ only when building from source |
+
+The official implementation depends on PyTorch, Torchvision, Pillow, Kornia,
+and Transformers. CUDA, Apple MPS, and CPU execution are selected automatically
+by this CLI.
+
+## Installation
 
 Download a release archive and keep its `rmbg` executable and `runtime/`
 directory together. Alternatively, build from source:
