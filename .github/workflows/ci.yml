@@ -68,7 +68,7 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             executable: rmbg.exe
-            npm_package: rmbg2-cli-win32-x64-msvc
+            npm_package: rmbg2-cli-windows-x64
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable

@@ -1,6 +1,6 @@
 {
   "name": "rmbg2-cli-linux-x64-gnu",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Linux x64 native executable for rmbg2-cli",
   "license": "MIT",
   "repository": {

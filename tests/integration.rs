@@ -23,7 +23,10 @@ fn version_uses_renamed_executable() {
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::starts_with("rmbg 0.4.0"));
+        .stdout(predicate::str::starts_with(format!(
+            "rmbg {}",
+            env!("CARGO_PKG_VERSION")
+        )));
 }
 
 #[test]

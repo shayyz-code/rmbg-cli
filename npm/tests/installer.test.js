@@ -62,7 +62,7 @@ esac
       FIXTURE_ARCHIVE: archive,
       FIXTURE_CHECKSUMS: checksums,
       RMBG_INSTALL_DIR: destination,
-      RMBG_VERSION: "0.4.0"
+      RMBG_VERSION: "0.4.1"
     }
   });
 

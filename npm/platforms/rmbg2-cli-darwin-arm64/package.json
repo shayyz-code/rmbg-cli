@@ -1,6 +1,6 @@
 {
   "name": "rmbg2-cli-darwin-arm64",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "macOS ARM64 native executable for rmbg2-cli",
   "license": "MIT",
   "repository": {

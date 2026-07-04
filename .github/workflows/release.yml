@@ -40,7 +40,7 @@ jobs:
             os: windows-latest
             executable: rmbg.exe
             archive: rmbg-x86_64-pc-windows-msvc.zip
-            npm_package: rmbg2-cli-win32-x64-msvc
+            npm_package: rmbg2-cli-windows-x64
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -132,7 +132,7 @@ jobs:
           publish_if_missing rmbg2-cli-linux-x64-gnu "dist/rmbg2-cli-linux-x64-gnu-$version.tgz"
           publish_if_missing rmbg2-cli-linux-arm64-gnu "dist/rmbg2-cli-linux-arm64-gnu-$version.tgz"
           publish_if_missing rmbg2-cli-darwin-arm64 "dist/rmbg2-cli-darwin-arm64-$version.tgz"
-          publish_if_missing rmbg2-cli-win32-x64-msvc "dist/rmbg2-cli-win32-x64-msvc-$version.tgz"
+          publish_if_missing rmbg2-cli-windows-x64 "dist/rmbg2-cli-windows-x64-$version.tgz"
           publish_if_missing rmbg2-cli "dist/rmbg2-cli-$version.tgz"
       - uses: actions/attest-build-provenance@v3
         with:

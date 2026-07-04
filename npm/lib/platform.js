@@ -4,7 +4,7 @@ const PACKAGES = new Map([
   ["darwin-arm64", "rmbg2-cli-darwin-arm64"],
   ["linux-arm64", "rmbg2-cli-linux-arm64-gnu"],
   ["linux-x64", "rmbg2-cli-linux-x64-gnu"],
-  ["win32-x64", "rmbg2-cli-win32-x64-msvc"]
+  ["win32-x64", "rmbg2-cli-windows-x64"]
 ]);
 
 function usesGlibc(report = process.report) {

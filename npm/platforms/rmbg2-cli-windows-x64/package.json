@@ -1,6 +1,6 @@
 {
-  "name": "rmbg2-cli-win32-x64-msvc",
-  "version": "0.4.0",
+  "name": "rmbg2-cli-windows-x64",
+  "version": "0.4.1",
   "description": "Windows x64 native executable for rmbg2-cli",
   "license": "MIT",
   "repository": {

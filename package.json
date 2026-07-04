@@ -1,6 +1,6 @@
 {
   "name": "rmbg2-cli",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Remove image backgrounds locally with BRIA RMBG-2.0",
   "license": "MIT",
   "repository": {
@@ -21,10 +21,10 @@
     "LICENSE"
   ],
   "optionalDependencies": {
-    "rmbg2-cli-darwin-arm64": "0.4.0",
-    "rmbg2-cli-linux-arm64-gnu": "0.4.0",
-    "rmbg2-cli-linux-x64-gnu": "0.4.0",
-    "rmbg2-cli-win32-x64-msvc": "0.4.0"
+    "rmbg2-cli-darwin-arm64": "0.4.1",
+    "rmbg2-cli-linux-arm64-gnu": "0.4.1",
+    "rmbg2-cli-linux-x64-gnu": "0.4.1",
+    "rmbg2-cli-windows-x64": "0.4.1"
   },
   "scripts": {
     "check:versions": "node npm/scripts/check-versions.js",

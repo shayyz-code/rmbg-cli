@@ -81,16 +81,16 @@ inference in Rust or expose the internal worker as a second user-facing CLI.
 
 ## First npm release bootstrap
 
-Leave the repository variable `NPM_TRUSTED_PUBLISHING` unset for `v0.4.0`.
+Leave the repository variable `NPM_TRUSTED_PUBLISHING` unset for `v0.4.1`.
 After its GitHub Release succeeds, download its five `.tgz` assets and publish
 the four platform packages before the launcher:
 
 ```bash
-npm publish rmbg2-cli-linux-x64-gnu-0.4.0.tgz --access public
-npm publish rmbg2-cli-linux-arm64-gnu-0.4.0.tgz --access public
-npm publish rmbg2-cli-darwin-arm64-0.4.0.tgz --access public
-npm publish rmbg2-cli-win32-x64-msvc-0.4.0.tgz --access public
-npm publish rmbg2-cli-0.4.0.tgz --access public
+npm publish rmbg2-cli-linux-x64-gnu-0.4.1.tgz --access public
+npm publish rmbg2-cli-linux-arm64-gnu-0.4.1.tgz --access public
+npm publish rmbg2-cli-darwin-arm64-0.4.1.tgz --access public
+npm publish rmbg2-cli-windows-x64-0.4.1.tgz --access public
+npm publish rmbg2-cli-0.4.1.tgz --access public
 ```
 
 For each npm package, configure `shayyz-code/rmbg-cli` and
