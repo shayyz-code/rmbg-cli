@@ -7,6 +7,7 @@ use std::process::{Command, Output, Stdio};
 use anyhow::{bail, Context};
 
 use crate::cli::{Cli, Device};
+use crate::ui::Ui;
 
 const RUNTIME_DIR_NAME: &str = "runtime";
 const WORKER_NAME: &str = "rmbg_runtime.py";
@@ -28,7 +29,7 @@ pub enum SetupError {
     Runtime(anyhow::Error),
 }
 
-pub fn run_worker(cli: &Cli, output: &Path, background: Option<[u8; 3]>) -> anyhow::Result<()> {
+pub fn run_worker(cli: &Cli, output: &Path, background: Option<[u8; 3]>) -> anyhow::Result<String> {
     let runtime_dir = find_runtime_dir()?;
     let worker = runtime_dir.join(WORKER_NAME);
     let uv = env::var_os("RMBG_UV_BIN").unwrap_or_else(|| "uv".into());
@@ -55,21 +56,29 @@ pub fn run_worker(cli: &Cli, output: &Path, background: Option<[u8; 3]>) -> anyh
         command.arg("--verbose");
     }
 
-    let status = command
-        .status()
+    let result = command
+        .output()
         .context("failed to start uv; install uv and ensure it is available on PATH")?;
-    if !status.success() {
-        bail!("RMBG-2.0 worker failed with {status}");
+    if !result.status.success() {
+        let details = output_text(&result);
+        let details = details
+            .trim()
+            .strip_prefix("error: ")
+            .unwrap_or(details.trim());
+        if details.is_empty() {
+            bail!("RMBG-2.0 worker failed with {}", result.status);
+        }
+        bail!("{details}");
     }
-    Ok(())
+    Ok(output_text(&result).trim().to_owned())
 }
 
-pub fn run_setup(device: Device) -> Result<(), SetupError> {
+pub fn run_setup(device: Device, ui: &Ui) -> Result<(), SetupError> {
     let runtime_dir = find_runtime_dir().map_err(SetupError::Runtime)?;
     let worker = runtime_dir.join(WORKER_NAME);
     let uv = env::var_os("RMBG_UV_BIN").unwrap_or_else(|| "uv".into());
 
-    eprintln!("[1/4] Checking uv...");
+    ui.step(1, 4, "Checking uv...");
     match Command::new(&uv)
         .arg("--version")
         .stdout(Stdio::null())
@@ -95,7 +104,7 @@ pub fn run_setup(device: Device) -> Result<(), SetupError> {
         }
     }
 
-    eprintln!("[2/4] Installing locked runtime dependencies...");
+    ui.step(2, 4, "Installing locked runtime dependencies...");
     let sync_status = Command::new(&uv)
         .arg("sync")
         .arg("--project")
@@ -110,7 +119,7 @@ pub fn run_setup(device: Device) -> Result<(), SetupError> {
         )));
     }
 
-    eprintln!("[3/4] Checking Hugging Face authentication...");
+    ui.step(3, 4, "Checking Hugging Face authentication...");
     let auth = run_uv_capture(&uv, &runtime_dir, &["hf", "auth", "whoami"])
         .map_err(SetupError::Runtime)?;
     if !auth.status.success() {
@@ -127,7 +136,7 @@ pub fn run_setup(device: Device) -> Result<(), SetupError> {
             )));
         }
 
-        eprintln!("No active Hugging Face login was found; starting interactive login...");
+        ui.notice("No active Hugging Face login was found; starting interactive login...");
         let login_status = Command::new(&uv)
             .arg("run")
             .arg("--project")
@@ -144,7 +153,11 @@ pub fn run_setup(device: Device) -> Result<(), SetupError> {
         }
     }
 
-    eprintln!("[4/4] Downloading and validating RMBG-2.0 (about 844 MB)...");
+    ui.step(
+        4,
+        4,
+        "Downloading and validating RMBG-2.0 (about 844 MB)...",
+    );
     let model_status = Command::new(&uv)
         .arg("run")
         .arg("--project")
@@ -161,7 +174,7 @@ pub fn run_setup(device: Device) -> Result<(), SetupError> {
 
     match model_status.code() {
         Some(0) => {
-            eprintln!("Setup complete. `rmbg` is ready to use.");
+            ui.success("Setup complete. `rmbg` is ready to use.");
             Ok(())
         }
         Some(3) => Err(SetupError::User(anyhow::anyhow!(

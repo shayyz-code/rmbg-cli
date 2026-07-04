@@ -1,5 +1,6 @@
 mod cli;
 mod runtime;
+mod ui;
 
 use std::process::ExitCode;
 
@@ -8,14 +9,16 @@ use anyhow::Context;
 use cli::{Cli, Invocation};
 
 fn main() -> ExitCode {
-    match run() {
+    let invocation = cli::parse_invocation();
+    let ui = ui::Ui::new(invocation.color());
+    match run(invocation, &ui) {
         Ok(()) => ExitCode::SUCCESS,
         Err(AppError::User(err)) => {
-            eprintln!("error: {err:#}");
+            ui.error(&format!("{err:#}"));
             ExitCode::from(1)
         }
         Err(AppError::Runtime(err)) => {
-            eprintln!("error: {err:#}");
+            ui.error(&format!("{err:#}"));
             ExitCode::from(2)
         }
     }
@@ -26,17 +29,19 @@ enum AppError {
     Runtime(anyhow::Error),
 }
 
-fn run() -> Result<(), AppError> {
-    match cli::parse_invocation() {
-        Invocation::Remove(cli) => run_remove(cli),
-        Invocation::Setup(setup) => runtime::run_setup(setup.device).map_err(|error| match error {
-            runtime::SetupError::User(error) => AppError::User(error),
-            runtime::SetupError::Runtime(error) => AppError::Runtime(error),
-        }),
+fn run(invocation: Invocation, ui: &ui::Ui) -> Result<(), AppError> {
+    match invocation {
+        Invocation::Remove(cli) => run_remove(cli, ui),
+        Invocation::Setup(setup) => {
+            runtime::run_setup(setup.device, ui).map_err(|error| match error {
+                runtime::SetupError::User(error) => AppError::User(error),
+                runtime::SetupError::Runtime(error) => AppError::Runtime(error),
+            })
+        }
     }
 }
 
-fn run_remove(cli: Cli) -> Result<(), AppError> {
+fn run_remove(cli: Cli, ui: &ui::Ui) -> Result<(), AppError> {
     if !cli.input.is_file() {
         return Err(AppError::User(anyhow::anyhow!(
             "input file not found: {}",
@@ -53,16 +58,33 @@ fn run_remove(cli: Cli) -> Result<(), AppError> {
     }
 
     if cli.verbose {
-        eprintln!("model: briaai/RMBG-2.0");
-        eprintln!("requested device: {}", runtime::device_label(cli.device));
+        ui.detail("model", "briaai/RMBG-2.0");
+        ui.detail("requested device", runtime::device_label(cli.device));
     }
 
-    runtime::run_worker(&cli, &output, background)
+    let filename = cli
+        .input
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("image");
+    let mut processing = ui.processing(filename, cli.verbose);
+    let worker_output = runtime::run_worker(&cli, &output, background)
         .with_context(|| format!("processing {}", cli.input.display()))
-        .map_err(AppError::Runtime)?;
+        .map_err(AppError::Runtime);
+    let elapsed = processing.stop();
+    let worker_output = worker_output?;
 
     if cli.verbose {
-        eprintln!("wrote {}", output.display());
+        for line in worker_output.lines() {
+            ui.detail("runtime", line);
+        }
+    }
+    if ui.is_interactive() || cli.verbose {
+        ui.success(&format!(
+            "Saved {} ({})",
+            output.display(),
+            ui::format_duration(elapsed)
+        ));
     }
     Ok(())
 }

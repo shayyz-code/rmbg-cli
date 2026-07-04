@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Added
+
+- Added purple and pink terminal styling, a Claude Code-inspired animated
+  processing shimmer, and semantic setup, success, and error messages.
+- Added `--color auto|always|never` with terminal and `NO_COLOR` detection.
+
+### Changed
+
+- Interactive removals now report their output path and elapsed time, while
+  redirected runs remain quiet unless verbose output is requested.
+
 ## [0.4.1] - 2026-07-04
 
 ### Fixed

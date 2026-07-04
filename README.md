@@ -135,17 +135,26 @@ needed:
 rmbg photo.jpg --device cpu
 ```
 
+Interactive terminals show a purple-to-pink animated processing indicator and
+the output path when processing completes. Redirected runs stay quiet unless
+`--verbose` is used, so scripts do not receive cursor-control output.
+
 | Flag | Description |
 |------|-------------|
 | `-o, --output <PATH>` | Output PNG path (default: `<input>-no-bg.png`) |
 | `--background <COLOR>` | Solid background (`#RRGGBB`, `R,G,B`, `white`, `black`) |
 | `--device <DEVICE>` | `auto`, `cuda`, `mps`, or `cpu` (default: `auto`) |
 | `-v, --verbose` | Print model, device, revision, and output details |
+| `--color <WHEN>` | `auto`, `always`, or `never` (default: `auto`) |
 | `-h, --help` | Show help |
 
-`rmbg setup [--device auto|cuda|mps|cpu]` prepares and validates all local
-runtime prerequisites. Because `setup` is reserved as a command, process a file
-with that exact name as `rmbg ./setup`.
+Color is enabled automatically for supported terminals and can also be
+controlled with `NO_COLOR`, `CLICOLOR`, and `CLICOLOR_FORCE`. Animation is
+restricted to interactive stderr even when color is forced.
+
+`rmbg setup [--device auto|cuda|mps|cpu] [--color auto|always|never]` prepares
+and validates all local runtime prerequisites. Because `setup` is reserved as a
+command, process a file with that exact name as `rmbg ./setup`.
 
 Exit code `1` indicates invalid input or a setup action the user must complete,
 such as installing uv, authenticating non-interactively, or accepting model

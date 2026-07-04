@@ -18,6 +18,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1"
+anstream = "0.6.21"
 clap = { version = "=4.5.23", features = ["derive"] }
 
 [dev-dependencies]

@@ -1,7 +1,7 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use clap::{Parser, ValueEnum};
+use clap::{ColorChoice, Parser, ValueEnum};
 
 #[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
 pub enum Device {
@@ -28,7 +28,8 @@ impl Device {
     version,
     about = "Remove image backgrounds locally with BRIA RMBG-2.0",
     long_about = None,
-    after_help = "Commands:\n  setup  Install dependencies, authenticate, and download RMBG-2.0\n\nA file named 'setup' must be passed as './setup'."
+    styles = crate::ui::help_styles(),
+    after_help = "Commands:\n  setup  Install dependencies, authenticate, and download RMBG-2.0\n\nExamples:\n  rmbg photo.jpg\n  rmbg photo.jpg --background white -o cutout.png\n  rmbg setup --device cpu\n\nA file named 'setup' must be passed as './setup'."
 )]
 pub struct Cli {
     /// Input image path
@@ -49,6 +50,15 @@ pub struct Cli {
     /// Print runtime, device, model, and output information
     #[arg(short, long)]
     pub verbose: bool,
+
+    /// Control colored output
+    #[arg(
+        long,
+        value_enum,
+        value_name = "WHEN",
+        default_value_t = ColorChoice::Auto
+    )]
+    pub color: ColorChoice,
 }
 
 #[derive(Debug, Parser)]
@@ -56,12 +66,23 @@ pub struct Cli {
     name = "rmbg setup",
     version,
     about = "Prepare the local RMBG-2.0 runtime",
-    long_about = None
+    long_about = None,
+    styles = crate::ui::help_styles(),
+    after_help = "Example:\n  rmbg setup --device cpu"
 )]
 pub struct SetupCli {
     /// Device on which to validate the model; auto prefers CUDA, then MPS, then CPU
     #[arg(long, value_enum, default_value_t = Device::Auto)]
     pub device: Device,
+
+    /// Control colored output
+    #[arg(
+        long,
+        value_enum,
+        value_name = "WHEN",
+        default_value_t = ColorChoice::Auto
+    )]
+    pub color: ColorChoice,
 }
 
 #[derive(Debug)]
@@ -80,6 +101,7 @@ where
     T: Into<OsString> + Clone,
 {
     let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
+    crate::ui::configure_color(requested_color(&args));
     let is_setup = args.get(1).is_some_and(|value| value == "setup");
 
     if is_setup {
@@ -88,6 +110,38 @@ where
     } else {
         Cli::try_parse_from(args).map(Invocation::Remove)
     }
+}
+
+impl Invocation {
+    pub fn color(&self) -> ColorChoice {
+        match self {
+            Self::Remove(cli) => cli.color,
+            Self::Setup(cli) => cli.color,
+        }
+    }
+}
+
+fn requested_color(args: &[OsString]) -> ColorChoice {
+    for (index, argument) in args.iter().enumerate().skip(1) {
+        let value = argument.to_string_lossy();
+        let color = if let Some(value) = value.strip_prefix("--color=") {
+            Some(value.to_owned())
+        } else if value == "--color" {
+            args.get(index + 1)
+                .map(|value| value.to_string_lossy().into_owned())
+        } else {
+            None
+        };
+
+        if let Some(color) = color {
+            return match color.as_str() {
+                "always" => ColorChoice::Always,
+                "never" => ColorChoice::Never,
+                _ => ColorChoice::Auto,
+            };
+        }
+    }
+    ColorChoice::Auto
 }
 
 impl Cli {
@@ -163,7 +217,8 @@ mod tests {
         assert!(matches!(
             setup,
             Invocation::Setup(SetupCli {
-                device: Device::Cpu
+                device: Device::Cpu,
+                ..
             })
         ));
 

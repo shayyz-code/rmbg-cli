@@ -37,6 +37,9 @@ Unit and CI tests must not depend on network access or cached model weights.
 
 - `src/cli.rs` defines the public `rmbg` interface, validates colors and
   devices, and calculates the default `<stem>-no-bg.png` output path.
+- `src/ui.rs` owns terminal color policy, semantic messages, and the
+  non-TUI purple-to-pink processing shimmer. Animation is limited to an
+  interactive stderr stream; redirected output must remain deterministic.
 - `src/runtime.rs` resolves an explicit, adjacent, development, or embedded
   `runtime` directory and invokes its worker through `uv run --frozen`. It also
   orchestrates dependency sync, authentication, model download, and load
@@ -58,6 +61,8 @@ and never automate acceptance of BRIA's license terms.
 
 Keep the Rust/Python boundary as command-line arguments. Do not duplicate model
 inference in Rust or expose the internal worker as a second user-facing CLI.
+Capture worker diagnostics while the processing shimmer is active so child
+output cannot corrupt the animated line.
 
 ## Testing and release conventions
 

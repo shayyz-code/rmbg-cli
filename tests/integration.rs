@@ -42,6 +42,37 @@ fn setup_help_does_not_require_uv_or_an_input_image() {
 }
 
 #[test]
+fn forced_color_styles_help_when_stdout_is_redirected() {
+    bin()
+        .args(["--color", "always", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\x1b["));
+}
+
+#[test]
+fn color_never_keeps_errors_plain() {
+    bin()
+        .args(["definitely-missing.png", "--color", "never"])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("input file not found"))
+        .stderr(predicate::str::contains("\x1b[").not());
+}
+
+#[test]
+fn no_color_disables_automatic_color() {
+    bin()
+        .env("NO_COLOR", "1")
+        .args(["definitely-missing.png", "--color", "auto"])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("\x1b[").not());
+}
+
+#[test]
 fn missing_input_exits_with_user_error() {
     bin()
         .arg("definitely-missing.png")
@@ -77,4 +108,58 @@ fn refusing_to_overwrite_input_is_a_user_error() {
         .stderr(predicate::str::contains(
             "output path must differ from input path",
         ));
+}
+
+#[cfg(unix)]
+#[test]
+fn verbose_worker_output_is_presented_after_processing() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = tempfile::tempdir().unwrap();
+    let uv = directory.path().join("uv");
+    std::fs::write(
+        &uv,
+        "#!/bin/sh\necho 'runtime device: cpu' >&2\necho 'model revision: test-revision' >&2\n",
+    )
+    .unwrap();
+    let mut permissions = std::fs::metadata(&uv).unwrap().permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&uv, permissions).unwrap();
+
+    let input = tempfile::Builder::new().suffix(".png").tempfile().unwrap();
+    bin()
+        .env("RMBG_UV_BIN", &uv)
+        .arg(input.path())
+        .args(["--verbose", "--color", "never"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("Removing background from"))
+        .stderr(predicate::str::contains("runtime device: cpu"))
+        .stderr(predicate::str::contains("model revision: test-revision"))
+        .stderr(predicate::str::contains("Saved"))
+        .stderr(predicate::str::contains("\x1b[").not());
+}
+
+#[cfg(unix)]
+#[test]
+fn worker_failure_preserves_details_without_duplicate_error_prefixes() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = tempfile::tempdir().unwrap();
+    let uv = directory.path().join("uv");
+    std::fs::write(&uv, "#!/bin/sh\necho 'error: model exploded' >&2\nexit 7\n").unwrap();
+    let mut permissions = std::fs::metadata(&uv).unwrap().permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&uv, permissions).unwrap();
+
+    let input = tempfile::Builder::new().suffix(".png").tempfile().unwrap();
+    bin()
+        .env("RMBG_UV_BIN", &uv)
+        .arg(input.path())
+        .args(["--verbose", "--color", "never"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("model exploded"))
+        .stderr(predicate::str::contains("error: model exploded").not());
 }
