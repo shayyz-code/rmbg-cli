@@ -126,14 +126,15 @@ jobs:
             if npm view "$package@$version" version >/dev/null 2>&1; then
               echo "$package@$version is already published"
             else
+              test -f "$tarball"
               npm publish "$tarball" --access public
             fi
           }
-          publish_if_missing rmbg2-cli-linux-x64-gnu "dist/rmbg2-cli-linux-x64-gnu-$version.tgz"
-          publish_if_missing rmbg2-cli-linux-arm64-gnu "dist/rmbg2-cli-linux-arm64-gnu-$version.tgz"
-          publish_if_missing rmbg2-cli-darwin-arm64 "dist/rmbg2-cli-darwin-arm64-$version.tgz"
-          publish_if_missing rmbg2-cli-windows-x64 "dist/rmbg2-cli-windows-x64-$version.tgz"
-          publish_if_missing rmbg2-cli "dist/rmbg2-cli-$version.tgz"
+          publish_if_missing rmbg2-cli-linux-x64-gnu "./dist/rmbg2-cli-linux-x64-gnu-$version.tgz"
+          publish_if_missing rmbg2-cli-linux-arm64-gnu "./dist/rmbg2-cli-linux-arm64-gnu-$version.tgz"
+          publish_if_missing rmbg2-cli-darwin-arm64 "./dist/rmbg2-cli-darwin-arm64-$version.tgz"
+          publish_if_missing rmbg2-cli-windows-x64 "./dist/rmbg2-cli-windows-x64-$version.tgz"
+          publish_if_missing rmbg2-cli "./dist/rmbg2-cli-$version.tgz"
       - uses: actions/attest-build-provenance@v3
         with:
           subject-path: dist/*
