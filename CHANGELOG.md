@@ -4,6 +4,24 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.6.0] - 2026-07-05
+
+### Added
+
+- Added overwrite protection with `--force`, destination-local temporary PNGs,
+  and atomic output commits.
+- Added a read-only `rmbg doctor` command, stable JSON automation output,
+  quiet mode, and five real worker progress milestones.
+- Bundled pinned uv 0.11.26 executables and third-party notices in native npm
+  packages and direct-release archives.
+
+### Changed
+
+- Replaced the indeterminate shimmer with a responsive determinate progress
+  display and deterministic redirected progress lines.
+- Captured all uv, Python, and Hugging Face diagnostics so JSON stdout remains
+  a single machine-readable object.
+
 ## [0.5.0] - 2026-07-04
 
 ### Added

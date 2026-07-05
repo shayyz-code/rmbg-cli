@@ -23,9 +23,11 @@ function installerFixture(validChecksum) {
   fs.mkdirSync(payload);
 
   writeExecutable(path.join(payload, "rmbg"), "#!/bin/sh\necho fixture-rmbg\n");
+  writeExecutable(path.join(payload, "uv"), "#!/bin/sh\necho 'uv fixture'\n");
+  fs.writeFileSync(path.join(payload, "THIRD_PARTY_NOTICES.md"), "fixture notices\n");
   const archiveName = "rmbg-x86_64-unknown-linux-gnu.tar.gz";
   const archive = path.join(root, archiveName);
-  const tar = spawnSync("tar", ["-czf", archive, "-C", payload, "rmbg"]);
+  const tar = spawnSync("tar", ["-czf", archive, "-C", payload, "rmbg", "uv", "THIRD_PARTY_NOTICES.md"]);
   assert.equal(tar.status, 0, tar.stderr?.toString());
 
   const actual = crypto.createHash("sha256").update(fs.readFileSync(archive)).digest("hex");
@@ -73,6 +75,8 @@ test("Unix installer verifies and installs the selected archive", { skip: proces
   const { destination, result } = installerFixture(true);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(fs.existsSync(path.join(destination, "rmbg")), true);
+  assert.equal(fs.existsSync(path.join(destination, "uv")), true);
+  assert.equal(fs.existsSync(path.join(destination, "rmbg-THIRD-PARTY-NOTICES.md")), true);
   assert.match(result.stdout, /Run 'rmbg setup'/);
 });
 

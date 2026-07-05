@@ -34,11 +34,14 @@ try {
     Expand-Archive (Join-Path $Temporary $Archive) -DestinationPath $Temporary -Force
     New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
     Copy-Item (Join-Path $Temporary "rmbg.exe") (Join-Path $InstallDir "rmbg.exe") -Force
+    Copy-Item (Join-Path $Temporary "uv.exe") (Join-Path $InstallDir "uv.exe") -Force
+    Copy-Item (Join-Path $Temporary "THIRD_PARTY_NOTICES.md") (Join-Path $InstallDir "rmbg-THIRD-PARTY-NOTICES.md") -Force
 } finally {
     Remove-Item -Recurse -Force $Temporary -ErrorAction SilentlyContinue
 }
 
 Write-Host "rmbg installed at $(Join-Path $InstallDir 'rmbg.exe')"
+Write-Host "bundled uv installed at $(Join-Path $InstallDir 'uv.exe')"
 if (($env:PATH -split ";") -notcontains $InstallDir) {
     Write-Host "Add $InstallDir to PATH before using rmbg."
 }

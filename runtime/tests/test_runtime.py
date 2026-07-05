@@ -70,6 +70,27 @@ class RuntimeTests(unittest.TestCase):
             with Image.open(output) as result:
                 self.assertEqual(result.getpixel((0, 0)), (0, 255, 0, 255))
 
+    def test_processing_progress_uses_real_preprocess_and_inference_milestones(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "source.png"
+            output = Path(directory) / "output.png"
+            Image.new("RGB", (2, 2), (255, 0, 0)).save(source)
+            events: list[tuple[int, str, str]] = []
+            rmbg_runtime.process_image(
+                FakeModel(torch.zeros((1, 1, 2, 2))),
+                source,
+                output,
+                torch.device("cpu"),
+                None,
+                lambda completed, stage, label: events.append(
+                    (completed, stage, label)
+                ),
+            )
+            self.assertEqual(
+                [(event[0], event[1]) for event in events],
+                [(3, "image_preprocessed"), (4, "inference_completed")],
+            )
+
     def test_background_parser_validates_range(self) -> None:
         self.assertEqual(rmbg_runtime.parse_background("1,2,3"), (1, 2, 3))
         with self.assertRaises(Exception):
@@ -89,6 +110,32 @@ class RuntimeTests(unittest.TestCase):
         gated = rmbg_runtime.GatedRepoError("accept the model terms")
         with mock.patch.object(rmbg_runtime, "load_model", side_effect=gated):
             self.assertEqual(rmbg_runtime.main(["--setup", "--device", "cpu"]), 3)
+
+    def test_doctor_is_local_only_and_deep_load_never_downloads(self) -> None:
+        fake_cache = Path("/tmp/fake-model-cache")
+        with (
+            mock.patch.object(rmbg_runtime, "cached_model_snapshot", return_value=fake_cache),
+            mock.patch.object(rmbg_runtime, "get_token", return_value="token"),
+            mock.patch.object(torch.cuda, "is_available", return_value=False),
+            mock.patch.object(torch.backends.mps, "is_available", return_value=False),
+            mock.patch.object(rmbg_runtime, "load_model") as load_model,
+        ):
+            result = rmbg_runtime.doctor_result(True)
+            self.assertEqual(result["deep_status"], "ok")
+            load_model.assert_called_once_with(
+                torch.device("cpu"), local_files_only=True
+            )
+
+    def test_normal_doctor_does_not_load_model(self) -> None:
+        with (
+            mock.patch.object(rmbg_runtime, "cached_model_snapshot", return_value=None),
+            mock.patch.object(rmbg_runtime, "get_token", return_value=None),
+            mock.patch.object(rmbg_runtime, "load_model") as load_model,
+        ):
+            result = rmbg_runtime.doctor_result(False)
+            self.assertFalse(result["model_cached"])
+            self.assertEqual(result["deep_status"], "skipped")
+            load_model.assert_not_called()
 
 
 if __name__ == "__main__":

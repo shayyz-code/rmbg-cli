@@ -1,6 +1,6 @@
 {
   "name": "rmbg2-cli-linux-arm64-gnu",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Linux ARM64 native executable for rmbg2-cli",
   "license": "MIT",
   "repository": {
@@ -10,5 +10,5 @@
   "os": ["linux"],
   "cpu": ["arm64"],
   "libc": ["glibc"],
-  "files": ["bin"]
+  "files": ["bin", "THIRD_PARTY_NOTICES.md"]
 }

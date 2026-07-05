@@ -7,7 +7,8 @@
 validation, output naming, runtime discovery, and process exit codes; the
 uv-managed Python worker owns Transformers inference and image compositing.
 Distribution uses the `rmbg2-cli` npm launcher with platform-specific native
-packages, plus checksummed GitHub Release installers.
+packages, plus checksummed GitHub Release installers. Native distributions
+bundle the pinned official uv executable adjacent to `rmbg`.
 
 The model weights are gated and licensed separately for non-commercial use
 under CC BY-NC 4.0. Do not describe the model weights as MIT-licensed or
@@ -38,8 +39,8 @@ Unit and CI tests must not depend on network access or cached model weights.
 - `src/cli.rs` defines the public `rmbg` interface, validates colors and
   devices, and calculates the default `<stem>-no-bg.png` output path.
 - `src/ui.rs` owns terminal color policy, semantic messages, and the
-  non-TUI purple-to-pink processing shimmer. Animation is limited to an
-  interactive stderr stream; redirected output must remain deterministic.
+  non-TUI determinate progress display. Animation is limited to the already
+  completed region on interactive stderr; redirected output is deterministic.
 - `src/runtime.rs` resolves an explicit, adjacent, development, or embedded
   `runtime` directory and invokes its worker through `uv run --frozen`. It also
   orchestrates dependency sync, authentication, model download, and load
@@ -55,14 +56,21 @@ Unit and CI tests must not depend on network access or cached model weights.
 - `src/main.rs` maps user errors to exit code 1 and runtime/inference failures
   to exit code 2.
 
-`setup` is a reserved first argument so the existing `rmbg <INPUT>` interface
-remains compatible. Keep setup idempotent, never execute a remote uv installer,
-and never automate acceptance of BRIA's license terms.
+`setup` and `doctor` are reserved first arguments so the existing
+`rmbg <INPUT>` interface remains compatible. Keep setup idempotent and doctor
+read-only. Never execute a remote uv installer at runtime or automate
+acceptance of BRIA's license terms.
 
 Keep the Rust/Python boundary as command-line arguments. Do not duplicate model
 inference in Rust or expose the internal worker as a second user-facing CLI.
-Capture worker diagnostics while the processing shimmer is active so child
-output cannot corrupt the animated line.
+Capture and filter worker diagnostics while progress is active so child output
+cannot corrupt the rendered display or JSON stdout.
+
+Removal output is written to a unique destination-local temporary file and is
+published only after successful inference. Never remove an existing output
+before the atomic commit. JSON mode emits one object on stdout and must capture
+every child diagnostic. Worker progress uses reserved JSON-prefixed stderr
+events; Rust owns the fifth milestone because only Rust performs the commit.
 
 ## Testing and release conventions
 
@@ -77,8 +85,8 @@ output cannot corrupt the animated line.
   bootstrapped with npm 2FA; subsequent releases use GitHub OIDC trusted
   publishing after `NPM_TRUSTED_PUBLISHING` is enabled as a repository variable.
 - Supported release targets are Linux glibc x64/ARM64, macOS ARM64, and Windows
-  x64. Release archives are functional binary-only artifacts because the locked
-  Python runtime sources are embedded.
+  x64. Release archives contain `rmbg`, pinned uv, and third-party notices; the
+  locked Python runtime sources remain embedded in `rmbg`.
 - Direct installers must verify `SHA256SUMS` and must never run `rmbg setup`
   automatically.
 - Update `README.md`, `CHANGELOG.md`, and this file whenever commands,

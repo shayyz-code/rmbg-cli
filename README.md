@@ -47,7 +47,7 @@ values below are conservative project guidance based on that architecture, the
 | Acceleration | None; a GPU is optional | NVIDIA GPU with 6 GB VRAM, or Apple Silicon with 16 GB unified memory |
 | Network | Required during initial setup | Broadband connection for the model and dependency download |
 | Account | Hugging Face account with the RMBG-2.0 terms accepted | `HF_TOKEN` configured for non-interactive setup |
-| Software | [uv](https://docs.astral.sh/uv/) and Python 3.10–3.12, managed by uv | Node.js 18+ for npm installation; Rust 1.75+ only when building from source |
+| Software | Python 3.10–3.12, managed by bundled uv | Node.js 18+ for npm installation; source builds may use `RMBG_UV_BIN` or uv from PATH; Rust 1.75+ only when building from source |
 
 The official implementation depends on PyTorch, Torchvision, Pillow, Kornia,
 and Transformers. CUDA, Apple MPS, and CPU execution are selected automatically
@@ -97,8 +97,8 @@ cargo build --release
 ./target/release/rmbg setup
 ```
 
-Setup checks for [uv](https://docs.astral.sh/uv/getting-started/installation/),
-prints the official installation command if it is missing, installs the locked
+Native distributions include pinned official uv 0.11.26. Runtime discovery
+uses `RMBG_UV_BIN`, then adjacent bundled uv, then uv from PATH. Setup installs the locked
 Python dependencies, starts Hugging Face login when needed, downloads the pinned
 844 MB model, and validates that it loads on the selected device. If BRIA's
 non-commercial terms have not been accepted, setup prints the model page and can
@@ -120,6 +120,13 @@ rmbg photo.jpg
 rmbg photo.jpg -o cutout.png -v
 ```
 
+Existing outputs are refused by default. Use `--force` to atomically replace
+one after successful processing:
+
+```bash
+rmbg photo.jpg -o cutout.png --force
+```
+
 Composite the foreground onto a solid color:
 
 ```bash
@@ -135,16 +142,20 @@ needed:
 rmbg photo.jpg --device cpu
 ```
 
-Interactive terminals show a purple-to-pink animated processing indicator and
-the output path when processing completes. Redirected runs stay quiet unless
-`--verbose` is used, so scripts do not receive cursor-control output.
+Interactive terminals show a bordered five-milestone determinate progress bar.
+Redirected stderr prints one deterministic line per completed milestone and
+never emits cursor controls. Expensive stages remain at their last real
+percentage until the underlying work completes.
 
 | Flag | Description |
 |------|-------------|
 | `-o, --output <PATH>` | Output PNG path (default: `<input>-no-bg.png`) |
+| `--force` | Atomically replace an existing output |
 | `--background <COLOR>` | Solid background (`#RRGGBB`, `R,G,B`, `white`, `black`) |
 | `--device <DEVICE>` | `auto`, `cuda`, `mps`, or `cpu` (default: `auto`) |
 | `-v, --verbose` | Print model, device, revision, and output details |
+| `--quiet` | Suppress progress, success, and informational output |
+| `--json` | Emit one JSON result on stdout and suppress human output |
 | `--color <WHEN>` | `auto`, `always`, or `never` (default: `auto`) |
 | `-h, --help` | Show help |
 
@@ -152,9 +163,21 @@ Color is enabled automatically for supported terminals and can also be
 controlled with `NO_COLOR`, `CLICOLOR`, and `CLICOLOR_FORCE`. Animation is
 restricted to interactive stderr even when color is forced.
 
+`--quiet` and `--verbose` conflict, as do `--json` and `--verbose`. JSON mode
+disables color and animation and captures all uv, Python, and Hugging Face
+diagnostics. Errors use `usage`, `user`, or `runtime` kinds with exit code 1 or
+2.
+
 `rmbg setup [--device auto|cuda|mps|cpu] [--color auto|always|never]` prepares
 and validates all local runtime prerequisites. Because `setup` is reserved as a
 command, process a file with that exact name as `rmbg ./setup`.
+
+`rmbg doctor [--deep]` performs read-only checks for uv, runtime files, the
+Python environment, local Hugging Face credentials, the exact pinned model
+cache, devices, automatic device selection, and at least 5 GiB of free cache
+storage. `--deep` loads only the already-cached model and never downloads it.
+Doctor never syncs dependencies, authenticates, accepts terms, or materializes
+runtime files. A file named `doctor` must be passed as `rmbg ./doctor`.
 
 Exit code `1` indicates invalid input or a setup action the user must complete,
 such as installing uv, authenticating non-interactively, or accepting model

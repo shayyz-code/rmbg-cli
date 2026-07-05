@@ -12,6 +12,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  UV_VERSION: 0.11.26
 
 jobs:
   build:
@@ -26,21 +27,25 @@ jobs:
             executable: rmbg
             archive: rmbg-x86_64-unknown-linux-gnu.tar.gz
             npm_package: rmbg2-cli-linux-x64-gnu
+            uv_archive: uv-x86_64-unknown-linux-gnu.tar.gz
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
             executable: rmbg
             archive: rmbg-aarch64-unknown-linux-gnu.tar.gz
             npm_package: rmbg2-cli-linux-arm64-gnu
+            uv_archive: uv-aarch64-unknown-linux-gnu.tar.gz
           - target: aarch64-apple-darwin
             os: macos-latest
             executable: rmbg
             archive: rmbg-aarch64-apple-darwin.tar.gz
             npm_package: rmbg2-cli-darwin-arm64
+            uv_archive: uv-aarch64-apple-darwin.tar.gz
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             executable: rmbg.exe
             archive: rmbg-x86_64-pc-windows-msvc.zip
             npm_package: rmbg2-cli-windows-x64
+            uv_archive: uv-x86_64-pc-windows-msvc.zip
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -54,6 +59,39 @@ jobs:
           node-version: 22
       - run: cargo build --release --locked --target ${{ matrix.target }}
 
+      - name: Download and verify pinned official uv (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="https://github.com/astral-sh/uv/releases/download/$UV_VERSION"
+          curl --proto '=https' --tlsv1.2 -fLsS "$base/${{ matrix.uv_archive }}" -o "${{ matrix.uv_archive }}"
+          curl --proto '=https' --tlsv1.2 -fLsS "$base/${{ matrix.uv_archive }}.sha256" -o uv.sha256
+          expected="$(awk '{ print $1 }' uv.sha256)"
+          if command -v sha256sum >/dev/null 2>&1; then
+            actual="$(sha256sum "${{ matrix.uv_archive }}" | awk '{ print $1 }')"
+          else
+            actual="$(shasum -a 256 "${{ matrix.uv_archive }}" | awk '{ print $1 }')"
+          fi
+          test "$actual" = "$expected"
+          mkdir uv-extract
+          tar -xzf "${{ matrix.uv_archive }}" -C uv-extract
+          find uv-extract -type f -name uv -exec cp {} uv \;
+          test -x uv
+
+      - name: Download and verify pinned official uv (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $Base = "https://github.com/astral-sh/uv/releases/download/$env:UV_VERSION"
+          Invoke-WebRequest "$Base/${{ matrix.uv_archive }}" -OutFile "${{ matrix.uv_archive }}"
+          Invoke-WebRequest "$Base/${{ matrix.uv_archive }}.sha256" -OutFile uv.sha256
+          $Expected = ((Get-Content uv.sha256) -split "\s+")[0].ToLowerInvariant()
+          $Actual = (Get-FileHash "${{ matrix.uv_archive }}" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($Actual -ne $Expected) { throw "uv checksum verification failed" }
+          Expand-Archive "${{ matrix.uv_archive }}" uv-extract
+          Copy-Item (Get-ChildItem uv-extract -Recurse -Filter uv.exe | Select-Object -First 1).FullName uv.exe
+
       - name: Package Unix executable and npm package
         if: runner.os != 'Windows'
         shell: bash
@@ -62,8 +100,14 @@ jobs:
           mkdir -p dist "npm/platforms/${{ matrix.npm_package }}/bin"
           cp "target/${{ matrix.target }}/release/${{ matrix.executable }}" dist/rmbg
           cp "target/${{ matrix.target }}/release/${{ matrix.executable }}" "npm/platforms/${{ matrix.npm_package }}/bin/rmbg"
-          chmod +x dist/rmbg "npm/platforms/${{ matrix.npm_package }}/bin/rmbg"
-          tar -czf "dist/${{ matrix.archive }}" -C dist rmbg
+          cp uv dist/uv
+          cp uv "npm/platforms/${{ matrix.npm_package }}/bin/uv"
+          cp THIRD_PARTY_NOTICES.md dist/THIRD_PARTY_NOTICES.md
+          cp THIRD_PARTY_NOTICES.md "npm/platforms/${{ matrix.npm_package }}/THIRD_PARTY_NOTICES.md"
+          chmod +x dist/rmbg dist/uv "npm/platforms/${{ matrix.npm_package }}/bin/rmbg" "npm/platforms/${{ matrix.npm_package }}/bin/uv"
+          tar -czf "dist/${{ matrix.archive }}" -C dist rmbg uv THIRD_PARTY_NOTICES.md
+          tar -tzf "dist/${{ matrix.archive }}" | grep -Fx rmbg
+          tar -tzf "dist/${{ matrix.archive }}" | grep -Fx uv
           npm pack "npm/platforms/${{ matrix.npm_package }}" --pack-destination dist
 
       - name: Package Windows executable and npm package
@@ -73,7 +117,15 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist, "npm/platforms/${{ matrix.npm_package }}/bin" | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/${{ matrix.executable }}" dist/rmbg.exe
           Copy-Item "target/${{ matrix.target }}/release/${{ matrix.executable }}" "npm/platforms/${{ matrix.npm_package }}/bin/rmbg.exe"
-          Compress-Archive -Path dist/rmbg.exe -DestinationPath "dist/${{ matrix.archive }}"
+          Copy-Item uv.exe dist/uv.exe
+          Copy-Item uv.exe "npm/platforms/${{ matrix.npm_package }}/bin/uv.exe"
+          Copy-Item THIRD_PARTY_NOTICES.md dist/THIRD_PARTY_NOTICES.md
+          Copy-Item THIRD_PARTY_NOTICES.md "npm/platforms/${{ matrix.npm_package }}/THIRD_PARTY_NOTICES.md"
+          Compress-Archive -Path dist/rmbg.exe, dist/uv.exe, dist/THIRD_PARTY_NOTICES.md -DestinationPath "dist/${{ matrix.archive }}"
+          New-Item -ItemType Directory archive-check | Out-Null
+          Expand-Archive "dist/${{ matrix.archive }}" archive-check
+          $Contents = (Get-ChildItem archive-check).Name
+          if ($Contents -notcontains "rmbg.exe" -or $Contents -notcontains "uv.exe") { throw "release archive inputs are incomplete" }
           npm pack "npm/platforms/${{ matrix.npm_package }}" --pack-destination dist
 
       - uses: actions/attest-build-provenance@v3
@@ -114,6 +166,15 @@ jobs:
           cp install.ps1 dist/rmbg-installer.ps1
           cd dist
           sha256sum rmbg-*.tar.gz rmbg-*.zip rmbg2-cli-*.tgz > SHA256SUMS
+      - name: Dry-run every generated npm tarball
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          npm publish "./dist/rmbg2-cli-linux-x64-gnu-$version.tgz" --access public --dry-run
+          npm publish "./dist/rmbg2-cli-linux-arm64-gnu-$version.tgz" --access public --dry-run
+          npm publish "./dist/rmbg2-cli-darwin-arm64-$version.tgz" --access public --dry-run
+          npm publish "./dist/rmbg2-cli-windows-x64-$version.tgz" --access public --dry-run
+          npm publish "./dist/rmbg2-cli-$version.tgz" --access public --dry-run
       - name: Publish npm packages with trusted publishing
         if: vars.NPM_TRUSTED_PUBLISHING == 'true'
         shell: bash

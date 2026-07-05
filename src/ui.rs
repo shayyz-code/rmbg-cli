@@ -2,13 +2,18 @@ use std::env;
 use std::fmt::Write as _;
 use std::io::{self, IsTerminal, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use anstream::{AutoStream, ColorChoice as StreamColorChoice};
 use clap::builder::styling::{AnsiColor, Color, RgbColor, Style, Styles};
 use clap::ColorChoice;
+use terminal_size::{terminal_size, Width};
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+use crate::cli::OutputArgs;
+use crate::runtime::{DoctorReport, ProgressEvent};
 
 const PURPLE: RgbColor = RgbColor(168, 85, 247);
 const PINK: RgbColor = RgbColor(236, 72, 153);
@@ -16,8 +21,6 @@ const PALE_PINK: RgbColor = RgbColor(245, 208, 254);
 const MUTED: RgbColor = RgbColor(148, 163, 184);
 const RED: RgbColor = RgbColor(248, 113, 113);
 const GREEN: RgbColor = RgbColor(74, 222, 128);
-
-const SPINNER_GLYPHS: [&str; 10] = ["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"];
 const SHIMMER: [RgbColor; 5] = [
     RgbColor(126, 34, 206),
     PURPLE,
@@ -25,6 +28,8 @@ const SHIMMER: [RgbColor; 5] = [
     PINK,
     RgbColor(190, 24, 93),
 ];
+const CLEAR_PROGRESS: &[u8] =
+    b"\r\x1b[2K\x1b[1A\r\x1b[2K\x1b[1A\r\x1b[2K\x1b[1A\r\x1b[2K\x1b[1A\r\x1b[2K";
 
 pub fn help_styles() -> Styles {
     Styles::styled()
@@ -45,101 +50,150 @@ pub fn configure_color(choice: ColorChoice) {
 pub struct Ui {
     color: ColorChoice,
     interactive: bool,
+    quiet: bool,
 }
 
 impl Ui {
-    pub fn new(color: ColorChoice) -> Self {
-        let interactive = io::stderr().is_terminal()
+    pub fn new(args: &OutputArgs) -> Self {
+        let interactive = !args.json
+            && io::stderr().is_terminal()
             && env::var("TERM").map_or(true, |term| !term.eq_ignore_ascii_case("dumb"));
-        Self { color, interactive }
-    }
-
-    pub fn is_interactive(self) -> bool {
-        self.interactive
+        Self {
+            color: if args.json {
+                ColorChoice::Never
+            } else {
+                args.color
+            },
+            interactive,
+            quiet: args.quiet || args.json,
+        }
     }
 
     pub fn detail(self, label: &str, value: &str) {
-        self.line(format!(
-            "  {}{}{} {value}",
-            style(MUTED),
-            label,
-            style(MUTED).render_reset()
-        ));
+        if !self.quiet {
+            self.line(format!("  {}: {}", sanitize(label), sanitize(value)));
+        }
+    }
+
+    pub fn diagnostics(self, text: &str) {
+        if self.quiet {
+            return;
+        }
+        for line in text.lines().filter(|line| !line.trim().is_empty()) {
+            self.detail("runtime", line);
+        }
     }
 
     pub fn step(self, current: usize, total: usize, message: &str) {
-        self.line(format!(
-            "{}[{current}/{total}]{} {message}",
-            style(PINK),
-            style(PINK).render_reset()
-        ));
+        if !self.quiet {
+            self.line(format!(
+                "{}[{current}/{total}]{} {}",
+                style(PINK),
+                style(PINK).render_reset(),
+                sanitize(message)
+            ));
+        }
     }
 
     pub fn notice(self, message: &str) {
-        self.line(format!(
-            "{}!{} {message}",
-            style(PINK).bold(),
-            style(PINK).bold().render_reset()
-        ));
+        if !self.quiet {
+            self.line(format!(
+                "{}!{} {}",
+                style(PINK).bold(),
+                style(PINK).bold().render_reset(),
+                sanitize(message)
+            ));
+        }
     }
 
     pub fn success(self, message: &str) {
-        self.line(format!(
-            "{}✓{} {message}",
-            style(GREEN).bold(),
-            style(GREEN).bold().render_reset()
-        ));
+        if !self.quiet {
+            self.line(format!(
+                "{}✓{} {}",
+                style(GREEN).bold(),
+                style(GREEN).bold().render_reset(),
+                sanitize(message)
+            ));
+        }
     }
 
     pub fn error(self, message: &str) {
         self.line(format!(
-            "{}error:{} {message}",
+            "{}error:{} {}",
             style(RED).bold(),
-            style(RED).bold().render_reset()
+            style(RED).bold().render_reset(),
+            sanitize(message)
         ));
     }
 
-    pub fn processing(self, filename: &str, verbose: bool) -> ProcessingStatus {
-        let visible = self.interactive || verbose;
-        if !visible {
-            return ProcessingStatus::hidden();
+    pub fn doctor(self, report: &DoctorReport) {
+        for check in &report.checks {
+            if self.quiet
+                && !matches!(
+                    check.status,
+                    crate::runtime::CheckStatus::ActionRequired
+                        | crate::runtime::CheckStatus::Error
+                )
+            {
+                continue;
+            }
+            self.line(format!(
+                "[{}] {}: {}",
+                serde_json::to_value(check.status)
+                    .ok()
+                    .and_then(|value| value.as_str().map(str::to_owned))
+                    .unwrap_or_else(|| "error".to_owned()),
+                check.name,
+                sanitize(&check.detail)
+            ));
         }
+    }
 
-        let started = Instant::now();
+    pub fn progress(self, filename: &str) -> ProgressDisplay {
+        if self.quiet {
+            return ProgressDisplay::hidden();
+        }
         if !self.interactive {
-            self.line(format!("Removing background from {filename}..."));
-            return ProcessingStatus {
-                started,
-                animation: None,
+            return ProgressDisplay {
+                mode: ProgressMode::Lines { ui: self },
+                started: Instant::now(),
             };
         }
-
+        let state = Arc::new(Mutex::new(ProgressState {
+            completed: 0,
+            label: "Starting".to_owned(),
+            filename: sanitize(filename),
+            frame: 0,
+        }));
         let stop = Arc::new(AtomicBool::new(false));
+        let thread_state = Arc::clone(&state);
         let thread_stop = Arc::clone(&stop);
-        let filename = filename.to_owned();
         let choice = stream_choice(self.color);
+        let started = Instant::now();
         let handle = thread::spawn(move || {
-            let mut frame = 0;
+            let mut first = true;
             while !thread_stop.load(Ordering::Relaxed) {
-                let line = render_processing_frame(frame, &filename, started.elapsed());
-                clear_status_line();
-                write_stderr(choice, &line);
-                frame = frame.wrapping_add(1);
-                for _ in 0..9 {
-                    if thread_stop.load(Ordering::Relaxed) {
-                        break;
-                    }
-                    thread::sleep(Duration::from_millis(10));
+                let frame = {
+                    let mut state = thread_state.lock().expect("progress state poisoned");
+                    state.frame = state.frame.wrapping_add(1);
+                    render_progress_frame(&state, started.elapsed())
+                };
+                if !first {
+                    clear_progress_rows();
                 }
+                first = false;
+                write_stderr(choice, &frame);
+                thread::sleep(Duration::from_millis(90));
             }
         });
-
-        ProcessingStatus {
+        ProgressDisplay {
             started,
-            animation: Some(Animation {
+            mode: ProgressMode::Interactive {
+                state,
                 stop,
+                choice,
                 handle: Some(handle),
-            }),
+            },
         }
     }
 
@@ -148,64 +202,187 @@ impl Ui {
     }
 }
 
-pub struct ProcessingStatus {
-    started: Instant,
-    animation: Option<Animation>,
+struct ProgressState {
+    completed: u8,
+    label: String,
+    filename: String,
+    frame: usize,
 }
 
-impl ProcessingStatus {
+enum ProgressMode {
+    Hidden,
+    Lines {
+        ui: Ui,
+    },
+    Interactive {
+        state: Arc<Mutex<ProgressState>>,
+        stop: Arc<AtomicBool>,
+        choice: StreamColorChoice,
+        handle: Option<JoinHandle<()>>,
+    },
+}
+
+pub struct ProgressDisplay {
+    mode: ProgressMode,
+    started: Instant,
+}
+
+impl ProgressDisplay {
     fn hidden() -> Self {
         Self {
+            mode: ProgressMode::Hidden,
             started: Instant::now(),
-            animation: None,
         }
     }
 
-    pub fn stop(&mut self) -> Duration {
-        if let Some(mut animation) = self.animation.take() {
-            animation.stop();
+    pub fn update(&mut self, event: &ProgressEvent) {
+        match &self.mode {
+            ProgressMode::Hidden => {}
+            ProgressMode::Lines { ui } => ui.line(format!(
+                "[{}/5] {}{}",
+                event.completed,
+                sanitize(&event.label),
+                event
+                    .device
+                    .as_ref()
+                    .map(|device| format!(" ({})", sanitize(device)))
+                    .unwrap_or_default()
+            )),
+            ProgressMode::Interactive { state, .. } => {
+                let mut state = state.lock().expect("progress state poisoned");
+                state.completed = event.completed;
+                state.label = sanitize(&event.label);
+            }
         }
+    }
+
+    pub fn complete(&mut self) -> Duration {
+        let event = ProgressEvent {
+            completed: 5,
+            total: 5,
+            stage: "output_committed".to_owned(),
+            label: "Output committed".to_owned(),
+            device: None,
+        };
+        self.update(&event);
+        self.stop(true);
         self.started.elapsed()
     }
-}
 
-impl Drop for ProcessingStatus {
-    fn drop(&mut self) {
-        self.stop();
+    pub fn fail(&mut self) {
+        self.stop(false);
     }
-}
 
-struct Animation {
-    stop: Arc<AtomicBool>,
-    handle: Option<JoinHandle<()>>,
-}
-
-impl Animation {
-    fn stop(&mut self) {
-        self.stop.store(true, Ordering::Relaxed);
-        if let Some(handle) = self.handle.take() {
-            let _ = handle.join();
+    fn stop(&mut self, success: bool) {
+        if let ProgressMode::Interactive {
+            state,
+            stop,
+            choice,
+            handle,
+        } = &mut self.mode
+        {
+            stop.store(true, Ordering::Relaxed);
+            if let Some(handle) = handle.take() {
+                let _ = handle.join();
+            }
+            clear_progress_rows();
+            if success {
+                let frame = render_progress_frame(
+                    &state.lock().expect("progress state poisoned"),
+                    self.started.elapsed(),
+                );
+                write_stderr(*choice, &format!("{frame}\n"));
+            }
         }
-        clear_status_line();
     }
 }
 
-fn render_processing_frame(frame: usize, filename: &str, elapsed: Duration) -> String {
-    let mut pixels = String::new();
-    for offset in 0..5 {
-        let glyph = SPINNER_GLYPHS[(frame + offset) % SPINNER_GLYPHS.len()];
-        let color = style(SHIMMER[(frame + offset) % SHIMMER.len()]);
-        let _ = write!(pixels, "{color}{glyph}{color:#}");
+impl Drop for ProgressDisplay {
+    fn drop(&mut self) {
+        self.fail();
     }
+}
 
+fn render_progress_frame(state: &ProgressState, elapsed: Duration) -> String {
+    let terminal = terminal_size()
+        .map(|(Width(width), _)| width as usize)
+        .unwrap_or(62);
+    let inner = terminal.saturating_sub(2).clamp(20, 60);
+    render_progress_frame_at_width(state, elapsed, inner)
+}
+
+fn render_progress_frame_at_width(
+    state: &ProgressState,
+    elapsed: Duration,
+    inner: usize,
+) -> String {
+    let percent = usize::from(state.completed) * 20;
+    let header = format!("{percent:>3}% {}", state.label);
+    let footer = format!("{} · {}", state.filename, format_duration(elapsed));
+    let bar_width = inner.saturating_sub(2);
+    let filled = bar_width * usize::from(state.completed) / 5;
+    let mut bar = String::new();
+    for index in 0..bar_width {
+        if index < filled {
+            let color = SHIMMER[(index + state.frame) % SHIMMER.len()];
+            let _ = write!(bar, "{}█{}", style(color), style(color).render_reset());
+        } else {
+            let _ = write!(bar, "{}░{}", style(MUTED), style(MUTED).render_reset());
+        }
+    }
+    let border = "─".repeat(inner);
     format!(
-        "{pixels} {}Removing background{} {}{filename} · {}{}",
-        style(PURPLE).bold(),
-        style(PURPLE).bold().render_reset(),
-        style(MUTED),
-        format_duration(elapsed),
-        style(MUTED).render_reset()
+        "╭{border}╮\n│{}│\n│ {bar} │\n│{}│\n╰{border}╯",
+        pad_line(&header, inner),
+        pad_line(&footer, inner)
     )
+}
+
+fn pad_line(value: &str, width: usize) -> String {
+    let value = truncate_width(value, width.saturating_sub(2));
+    let padding = width.saturating_sub(2 + UnicodeWidthStr::width(value.as_str()));
+    format!(" {value}{} ", " ".repeat(padding))
+}
+
+fn truncate_width(value: &str, width: usize) -> String {
+    let mut result = String::new();
+    let mut used = 0;
+    for character in value.chars() {
+        let next = character.width().unwrap_or(0);
+        if used + next > width {
+            break;
+        }
+        result.push(character);
+        used += next;
+    }
+    result
+}
+
+pub fn sanitize(value: &str) -> String {
+    let mut result = String::new();
+    let mut escape = 0u8;
+    for character in value.chars() {
+        if escape == 1 {
+            if character == '[' || character == ']' {
+                escape = 2;
+            } else {
+                escape = 0;
+            }
+            continue;
+        }
+        if escape == 2 {
+            if ('@'..='~').contains(&character) {
+                escape = 0;
+            }
+            continue;
+        }
+        if character == '\u{1b}' {
+            escape = 1;
+        } else if !character.is_control() || character == '\t' {
+            result.push(character);
+        }
+    }
+    result
 }
 
 pub fn format_duration(duration: Duration) -> String {
@@ -235,9 +412,9 @@ fn write_stderr(choice: StreamColorChoice, text: &str) {
     let _ = stderr.flush();
 }
 
-fn clear_status_line() {
+fn clear_progress_rows() {
     let mut stderr = io::stderr().lock();
-    let _ = stderr.write_all(b"\r\x1b[2K");
+    let _ = stderr.write_all(CLEAR_PROGRESS);
     let _ = stderr.flush();
 }
 
@@ -252,12 +429,29 @@ mod tests {
     }
 
     #[test]
-    fn processing_frames_contain_gradient_pixels_and_context() {
-        let frame = render_processing_frame(0, "photo.jpg", Duration::from_secs(3));
-        assert!(frame.contains("·"));
-        assert!(frame.contains("✢"));
-        assert!(frame.contains("Removing background"));
+    fn large_progress_has_three_rows_and_real_percentage() {
+        let state = ProgressState {
+            completed: 2,
+            label: "Model loaded".to_owned(),
+            filename: "photo.jpg".to_owned(),
+            frame: 0,
+        };
+        let frame = render_progress_frame_at_width(&state, Duration::from_secs(3), 40);
+        assert_eq!(frame.lines().count(), 5);
+        assert!(frame.contains(" 40% Model loaded"));
         assert!(frame.contains("photo.jpg · 3s"));
-        assert!(frame.contains("\x1b["));
+        assert_eq!(frame.matches('█').count(), 15);
+    }
+
+    #[test]
+    fn sanitizes_terminal_controls() {
+        assert_eq!(sanitize("bad\x1b[2Jname\r\n"), "badname");
+    }
+
+    #[test]
+    fn cleanup_erases_all_five_progress_rows() {
+        let cleanup = String::from_utf8_lossy(CLEAR_PROGRESS);
+        assert_eq!(cleanup.matches("\x1b[2K").count(), 5);
+        assert_eq!(cleanup.matches("\x1b[1A").count(), 4);
     }
 }

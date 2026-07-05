@@ -63,8 +63,11 @@ fi
 mkdir -p "$install_dir"
 tar -xzf "$temporary/$archive" -C "$temporary"
 install -m 755 "$temporary/rmbg" "$install_dir/rmbg"
+install -m 755 "$temporary/uv" "$install_dir/uv"
+install -m 644 "$temporary/THIRD_PARTY_NOTICES.md" "$install_dir/rmbg-THIRD-PARTY-NOTICES.md"
 
 echo "rmbg installed at $install_dir/rmbg"
+echo "bundled uv installed at $install_dir/uv"
 case ":$PATH:" in
   *":$install_dir:"*) ;;
   *) echo "Add $install_dir to PATH before using rmbg." ;;
