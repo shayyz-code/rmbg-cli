@@ -36,13 +36,13 @@ jobs:
       - run: sh -n install.sh
 
   msrv:
-    name: Rust 1.75 compatibility
+    name: Rust 1.85 compatibility
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.75"
+          toolchain: "1.85"
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --locked
 

@@ -2,7 +2,7 @@
 name = "rmbg-cli"
 version = "0.6.0"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.85"
 description = "Remove image backgrounds locally with BRIA RMBG-2.0"
 license = "MIT"
 repository = "https://github.com/shayyz-code/rmbg-cli"

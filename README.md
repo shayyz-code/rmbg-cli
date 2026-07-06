@@ -47,7 +47,7 @@ values below are conservative project guidance based on that architecture, the
 | Acceleration | None; a GPU is optional | NVIDIA GPU with 6 GB VRAM, or Apple Silicon with 16 GB unified memory |
 | Network | Required during initial setup | Broadband connection for the model and dependency download |
 | Account | Hugging Face account with the RMBG-2.0 terms accepted | `HF_TOKEN` configured for non-interactive setup |
-| Software | Python 3.10–3.12, managed by bundled uv | Node.js 18+ for npm installation; source builds may use `RMBG_UV_BIN` or uv from PATH; Rust 1.75+ only when building from source |
+| Software | Python 3.10–3.12, managed by bundled uv | Node.js 18+ for npm installation; source builds may use `RMBG_UV_BIN` or uv from PATH; Rust 1.85+ only when building from source |
 
 The official implementation depends on PyTorch, Torchvision, Pillow, Kornia,
 and Transformers. CUDA, Apple MPS, and CPU execution are selected automatically
